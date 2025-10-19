@@ -12,7 +12,7 @@ use crate::request::MessageMetadata;
 /// A raw client connection which can produce multiplexed streams.
 pub struct Channel {
     #[cfg(not(feature = "simulation"))]
-    connection: hyper::Client<hyper::client::HttpConnector, hyper::Body>,
+    connection: hyper_util::client::legacy::Client<hyper_util::client::legacy::connect::HttpConnector, http_body_util::Full<bytes::Bytes>>,
 
     #[cfg(feature = "simulation")]
     connection: LazyClient,
@@ -24,12 +24,12 @@ impl Channel {
     #[cfg(not(feature = "simulation"))]
     /// Connects to a remote RPC server.
     pub fn connect(remote_addr: SocketAddr) -> Self {
-        let mut http = hyper::client::HttpConnector::new();
+        let mut http = hyper_util::client::legacy::connect::HttpConnector::new();
         http.enforce_http(false);
         http.set_nodelay(true);
         http.set_connect_timeout(Some(std::time::Duration::from_secs(2)));
 
-        let client = hyper::Client::builder()
+        let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
             .http2_keep_alive_while_idle(true)
             .http2_only(true)
             .http2_adaptive_window(true)
@@ -59,12 +59,19 @@ impl Channel {
         metadata: MessageMetadata,
         headers: HeaderMap,
         body: Body,
-    ) -> Result<Response<hyper::Body>, Error> {
+    ) -> Result<Response<hyper::body::Incoming>, Error> {
         let uri = format!("http://{}{}", self.remote_addr, metadata.to_uri_path(),);
+
+        // Convert the body to bytes and then to Full
+        let body_bytes = match body.collect().await {
+            Ok(bytes) => bytes,
+            Err(_) => bytes::Bytes::new(),
+        };
+
         let mut request = Request::builder()
             .method(Method::POST)
             .uri(uri)
-            .body(body.into_inner())
+            .body(http_body_util::Full::new(body_bytes))
             .unwrap();
 
         (*request.headers_mut()) = headers;

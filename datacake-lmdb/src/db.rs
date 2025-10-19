@@ -324,10 +324,12 @@ fn setup_disk_handle(path: &Path, tasks: Receiver<Task>) -> heed::Result<Env> {
         let _ = std::fs::create_dir_all(path); // Attempt to create the directory.
     }
 
-    let env = EnvOpenOptions::new()
-        .map_size(DEFAULT_MAP_SIZE)
-        .max_dbs(MAX_NUM_DBS)
-        .open(path)?;
+    let env = unsafe {
+        EnvOpenOptions::new()
+            .map_size(DEFAULT_MAP_SIZE)
+            .max_dbs(MAX_NUM_DBS)
+            .open(path)?
+    };
 
     let mut txn = env.write_txn()?;
     let keyspace_list = env.create_database(&mut txn, Some("datacake-keyspace"))?;

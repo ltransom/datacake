@@ -175,7 +175,7 @@ where
     #[inline]
     /// Creates a new RPC context which can customise more of
     /// the request than the convenience methods, i.e. Headers.
-    pub fn create_rpc_context(&self) -> RpcContext<Svc> {
+    pub fn create_rpc_context(&self) -> RpcContext<'_, Svc> {
         RpcContext {
             client: self,
             headers: HeaderMap::new(),
@@ -298,9 +298,9 @@ where
             return <<Svc as Handler<Msg>>::Reply>::from_body(Body::new(body)).await;
         }
 
-        let buffer = crate::utils::to_aligned(body)
+        let buffer = crate::utils::to_aligned(Body::new(body))
             .await
-            .map_err(|e| Status::internal(e.message()))?;
+            .map_err(|e| Status::internal(e.to_string()))?;
         let status = DataView::<Status>::using(buffer).map_err(|_| Status::invalid())?;
         Err(status
             .deserialize_view()

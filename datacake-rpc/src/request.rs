@@ -40,9 +40,9 @@ where
     type Content = DataView<Self>;
 
     async fn from_body(body: Body) -> Result<Self::Content, Status> {
-        let bytes = crate::utils::to_aligned(body.0)
+        let bytes = crate::utils::to_aligned(body)
             .await
-            .map_err(Status::internal)?;
+            .map_err(|e| Status::internal(e.to_string()))?;
 
         DataView::using(bytes).map_err(|_| Status::invalid())
     }

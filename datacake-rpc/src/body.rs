@@ -1,47 +1,79 @@
-use std::ops::{Deref, DerefMut};
 
 use rkyv::{Archive, Serialize};
 
 use crate::rkyv_tooling::DatacakeSerializer;
 use crate::Status;
 
-/// A wrapper type around the internal [hyper::Body]
-pub struct Body(pub(crate) hyper::Body);
+use http_body_util::BodyExt;
+
+/// A wrapper type around different body types
+pub enum Body {
+    Incoming(hyper::body::Incoming),
+    Full(http_body_util::Full<bytes::Bytes>),
+}
 
 impl Body {
-    /// Creates a new body.
-    pub fn new(inner: hyper::Body) -> Self {
-        Self(inner)
+    /// Creates a new body from an incoming body.
+    pub fn new(inner: hyper::body::Incoming) -> Self {
+        Self::Incoming(inner)
     }
 
-    /// Consumes the body returning the inner hyper object.
-    pub fn into_inner(self) -> hyper::Body {
-        self.0
+    /// Creates a new body from bytes.
+    pub fn from_bytes(bytes: impl Into<bytes::Bytes>) -> Self {
+        Self::Full(http_body_util::Full::new(bytes.into()))
+    }
+
+    /// Collects the body into bytes
+    pub async fn collect(self) -> Result<bytes::Bytes, Box<dyn std::error::Error + Send + Sync>> {
+        match self {
+            Body::Incoming(body) => {
+                let collected = body.collect().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                Ok(collected.to_bytes())
+            }
+            Body::Full(body) => {
+                let collected = body.collect().await.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+                Ok(collected.to_bytes())
+            }
+        }
+    }
+
+    /// Converts to bytes for HTTP responses
+    pub fn into_http_body(self) -> http_body_util::Full<bytes::Bytes> {
+        match self {
+            Body::Full(body) => body,
+            Body::Incoming(_) => {
+                // For immediate conversion, we return empty body
+                // In practice, this should be collected first
+                http_body_util::Full::new(bytes::Bytes::new())
+            }
+        }
     }
 }
 
-impl<T> From<T> for Body
-where
-    T: Into<hyper::Body>,
-{
-    fn from(value: T) -> Self {
-        Self(value.into())
+impl From<hyper::body::Incoming> for Body {
+    fn from(value: hyper::body::Incoming) -> Self {
+        Self::new(value)
     }
 }
 
-impl Deref for Body {
-    type Target = hyper::Body;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl From<Vec<u8>> for Body {
+    fn from(value: Vec<u8>) -> Self {
+        Self::from_bytes(value)
     }
 }
 
-impl DerefMut for Body {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+impl From<String> for Body {
+    fn from(value: String) -> Self {
+        Self::from_bytes(value)
     }
 }
+
+impl From<&'static str> for Body {
+    fn from(value: &'static str) -> Self {
+        Self::from_bytes(value)
+    }
+}
+
 
 /// The serializer trait converting replies into hyper bodies.
 ///

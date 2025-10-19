@@ -20,4 +20,7 @@ pub enum Error {
     #[error("Hyper Error: {0}")]
     /// The operation failed due an error originating in hyper.
     Hyper(#[from] hyper::Error),
+    #[error("Hyper Util Error: {0}")]
+    /// The operation failed due an error originating in hyper-util.
+    HyperUtil(#[from] hyper_util::client::legacy::Error),
 }
