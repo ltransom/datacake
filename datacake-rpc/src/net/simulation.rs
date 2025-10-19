@@ -4,8 +4,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use hyper::client::conn::SendRequest;
-use hyper::Body;
+use hyper::client::conn::http2::SendRequest;
+use http_body_util::Full;
+use bytes::Bytes;
 use tokio::sync::{Mutex, OnceCell};
 use tokio::time::timeout;
 
@@ -18,7 +19,7 @@ use crate::net::Error;
 /// performance.
 pub struct LazyClient {
     addr: SocketAddr,
-    client: Arc<OnceCell<Mutex<SendRequest<Body>>>>,
+    client: Arc<OnceCell<Mutex<SendRequest<Full<Bytes>>>>>,
 }
 
 impl LazyClient {
@@ -31,7 +32,7 @@ impl LazyClient {
     }
 
     /// Ensures the connection is initialised and ready to handle events.
-    pub async fn get_or_init(&self) -> Result<&Mutex<SendRequest<Body>>, Error> {
+    pub async fn get_or_init(&self) -> Result<&Mutex<SendRequest<Full<Bytes>>>, Error> {
         if let Some(existing) = self.client.get() {
             return Ok(existing);
         }
@@ -48,11 +49,10 @@ impl LazyClient {
             ))
         })??;
 
-        let (sender, connection) = hyper::client::conn::Builder::new()
-            .http2_keep_alive_while_idle(true)
-            .http2_only(true)
-            .http2_adaptive_window(true)
-            .handshake(io)
+        let (sender, connection) = hyper::client::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .keep_alive_while_idle(true)
+            .adaptive_window(true)
+            .handshake(hyper_util::rt::TokioIo::new(io))
             .await?;
 
         tokio::spawn(async move {

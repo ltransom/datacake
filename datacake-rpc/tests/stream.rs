@@ -59,7 +59,7 @@ async fn test_stream_body() {
     };
 
     let resp = rpc_client.send(&msg1).await.unwrap();
-    let body = hyper::body::to_bytes(resp.into_inner()).await.unwrap();
+    let body = resp.collect().await.unwrap();
     assert_eq!(msg1.buffer, body.as_ref());
 
     server.shutdown();

@@ -4,11 +4,12 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use http::{Request, Response, StatusCode};
-use hyper::server::conn::Http;
+use hyper::server::conn::http2;
 use hyper::service::service_fn;
 use rkyv::AlignedVec;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tracing::{error, warn};
 
 use crate::body::Body;
 use crate::server::ServerState;
@@ -46,11 +47,10 @@ pub(crate) async fn start_rpc_server(
                     handle_connection(req, state.clone(), remote_addr)
                 });
 
-                let connection = Http::new()
-                    .http2_only(true)
-                    .http2_adaptive_window(true)
-                    .http2_keep_alive_timeout(Duration::from_secs(10))
-                    .serve_connection(io, handler);
+                let connection = http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+                    .adaptive_window(true)
+                    .keep_alive_timeout(Duration::from_secs(10))
+                    .serve_connection(hyper_util::rt::TokioIo::new(io), handler);
 
                 if let Err(e) = connection.await {
                     error!(error = ?e, "Error while serving HTTP connection.");
@@ -69,14 +69,14 @@ pub(crate) async fn start_rpc_server(
 /// This accepts new streams being created and spawns concurrent tasks to handle
 /// them.
 async fn handle_connection(
-    req: Request<hyper::Body>,
+    req: Request<hyper::body::Incoming>,
     state: ServerState,
     remote_addr: SocketAddr,
-) -> Result<Response<hyper::Body>, Infallible> {
+) -> Result<Response<http_body_util::Full<bytes::Bytes>>, Infallible> {
     match handle_message(req, state, remote_addr).await {
         Ok(r) => Ok(r),
         Err(e) => {
-            let mut response = Response::new(e.to_string().into());
+            let mut response = Response::new(http_body_util::Full::new(bytes::Bytes::from(e.to_string())));
             (*response.status_mut()) = StatusCode::INTERNAL_SERVER_ERROR;
             Ok(response)
         },
@@ -84,15 +84,20 @@ async fn handle_connection(
 }
 
 async fn handle_message(
-    req: Request<hyper::Body>,
+    req: Request<hyper::body::Incoming>,
     state: ServerState,
     remote_addr: SocketAddr,
-) -> anyhow::Result<Response<hyper::Body>> {
+) -> anyhow::Result<Response<http_body_util::Full<bytes::Bytes>>> {
     let reply = try_handle_request(req, state, remote_addr).await;
 
     match reply {
         Ok(body) => {
-            let mut response = Response::new(body.into_inner());
+            // Convert the body to bytes for the response
+            let bytes = match body.collect().await {
+                Ok(bytes) => bytes,
+                Err(_) => bytes::Bytes::new(),
+            };
+            let mut response = Response::new(http_body_util::Full::new(bytes));
             (*response.status_mut()) = StatusCode::OK;
             Ok(response)
         },
@@ -101,7 +106,7 @@ async fn handle_message(
 }
 
 async fn try_handle_request(
-    req: Request<hyper::Body>,
+    req: Request<hyper::body::Incoming>,
     state: ServerState,
     remote_addr: SocketAddr,
 ) -> Result<Body, Status> {
@@ -118,12 +123,12 @@ async fn try_handle_request(
         .await
 }
 
-fn create_bad_request(status: &Status) -> Response<hyper::Body> {
+fn create_bad_request(status: &Status) -> Response<http_body_util::Full<bytes::Bytes>> {
     // This should be infallible.
     let buffer =
         crate::rkyv_tooling::to_view_bytes(status).unwrap_or_else(|_| AlignedVec::new());
 
-    let mut response = Response::new(buffer.to_vec().into());
+    let mut response = Response::new(http_body_util::Full::new(bytes::Bytes::from(buffer.to_vec())));
     (*response.status_mut()) = StatusCode::BAD_REQUEST;
 
     response
