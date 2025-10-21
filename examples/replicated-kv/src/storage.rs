@@ -40,7 +40,7 @@ impl ShardedStorage {
         Ok(Self { shards })
     }
 
-    fn get_shard_id(&self, key: Key) -> usize {
+    fn get_shard_id(&self, key: &[u8]) -> usize {
         // This probably shouldn't be crc based but it's just for a demo.
         let mut hasher = crc32fast::Hasher::new();
         key.hash(&mut hasher);
@@ -99,7 +99,7 @@ impl Storage for ShardedStorage {
         shard_blocks.resize_with(self.shards.len(), Vec::new);
 
         for key in keys {
-            let shard_id = self.get_shard_id(key);
+            let shard_id = self.get_shard_id(&key);
             shard_blocks[shard_id].push(key);
         }
 
@@ -111,7 +111,7 @@ impl Storage for ShardedStorage {
                 .await;
 
             if let Err(e) = res {
-                successful_ids.extend(e.successful_doc_ids().iter().copied());
+                successful_ids.extend(e.successful_doc_ids().iter().cloned());
                 error = Some(e.into_inner());
             } else {
                 successful_ids.extend(doc_ids);
@@ -147,8 +147,9 @@ impl Storage for ShardedStorage {
 
         for doc in documents {
             total_docs += 1;
-            let shard_id = self.get_shard_id(doc.id());
-            doc_id_blocks[shard_id].push(doc.id());
+            let doc_id = doc.id().to_vec();
+            let shard_id = self.get_shard_id(&doc_id);
+            doc_id_blocks[shard_id].push(doc_id);
             shard_blocks[shard_id].push(doc);
         }
 
@@ -162,7 +163,7 @@ impl Storage for ShardedStorage {
                 .await;
 
             if let Err(e) = res {
-                successful_ids.extend(e.successful_doc_ids().iter().copied());
+                successful_ids.extend(e.successful_doc_ids().iter().cloned());
                 error = Some(e.into_inner());
             } else {
                 successful_ids.extend(doc_ids);
@@ -182,7 +183,7 @@ impl Storage for ShardedStorage {
         doc_id: Key,
         timestamp: HLCTimestamp,
     ) -> std::result::Result<(), Self::Error> {
-        let shard_id = self.get_shard_id(doc_id);
+        let shard_id = self.get_shard_id(&doc_id);
         self.shards[shard_id]
             .mark_as_tombstone(keyspace, doc_id, timestamp)
             .await
@@ -201,8 +202,8 @@ impl Storage for ShardedStorage {
 
         for doc in documents {
             total_docs += 1;
-            let shard_id = self.get_shard_id(doc.id);
-            doc_id_blocks[shard_id].push(doc.id);
+            let shard_id = self.get_shard_id(&doc.id);
+            doc_id_blocks[shard_id].push(doc.id.clone());
             shard_blocks[shard_id].push(doc);
         }
 
@@ -216,7 +217,7 @@ impl Storage for ShardedStorage {
                 .await;
 
             if let Err(e) = res {
-                successful_ids.extend(e.successful_doc_ids().iter().copied());
+                successful_ids.extend(e.successful_doc_ids().iter().cloned());
                 error = Some(e.into_inner());
             } else {
                 successful_ids.extend(doc_ids);
@@ -235,7 +236,7 @@ impl Storage for ShardedStorage {
         keyspace: &str,
         doc_id: Key,
     ) -> std::result::Result<Option<Document>, Self::Error> {
-        let shard_id = self.get_shard_id(doc_id);
+        let shard_id = self.get_shard_id(&doc_id);
         self.shards[shard_id].get(keyspace, doc_id).await
     }
 
@@ -248,7 +249,7 @@ impl Storage for ShardedStorage {
         shard_blocks.resize_with(self.shards.len(), Vec::new);
 
         for doc_id in doc_ids {
-            let shard_id = self.get_shard_id(doc_id);
+            let shard_id = self.get_shard_id(&doc_id);
             shard_blocks[shard_id].push(doc_id);
         }
 

@@ -67,14 +67,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .expect("Put value.");
 
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
     assert_eq!(doc.id(), 1);
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_1_handle
-        .get(2)
+        .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
@@ -82,14 +82,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
     assert_eq!(doc.data(), b"Hello, world from node-2");
 
     let doc = node_2_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
     assert_eq!(doc.id(), 1);
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_2_handle
-        .get(2)
+        .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
@@ -114,9 +114,9 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await
         .expect("Put value.");
 
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
-    let doc = node_3_handle.get(2).await.expect("Get value.");
+    let doc = node_3_handle.get(2_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
 
     node_3
@@ -128,14 +128,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     let doc = node_3_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
     assert_eq!(doc.id(), 1);
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_3_handle
-        .get(2)
+        .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
@@ -143,14 +143,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
     assert_eq!(doc.data(), b"Hello, world from node-2");
 
     let doc = node_1_handle
-        .get(3)
+        .get(3_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
     assert_eq!(doc.id(), 3);
     assert_eq!(doc.data(), b"Hello, world from node-3");
     let doc = node_2_handle
-        .get(3)
+        .get(3_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");

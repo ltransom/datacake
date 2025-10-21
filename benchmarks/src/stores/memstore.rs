@@ -41,7 +41,7 @@ impl Storage for MemStore {
         if let Some(ks) = self.metadata.read().get(keyspace) {
             return Ok(ks
                 .iter()
-                .map(|(k, (ts, tombstone))| (*k, *ts, *tombstone))
+                .map(|(k, (ts, tombstone))| (k.clone(), *ts, *tombstone))
                 .collect::<Vec<_>>()
                 .into_iter());
         };
@@ -80,12 +80,12 @@ impl Storage for MemStore {
             .entry(keyspace.to_string())
             .and_modify(|entries| {
                 for doc in documents.clone() {
-                    entries.insert(doc.id(), doc);
+                    entries.insert(doc.id().to_vec(), doc);
                 }
             })
             .or_insert_with(|| {
                 HashMap::from_iter(
-                    documents.clone().into_iter().map(|doc| (doc.id(), doc)),
+                    documents.clone().into_iter().map(|doc| (doc.id().to_vec(), doc)),
                 )
             });
         self.metadata
@@ -93,14 +93,14 @@ impl Storage for MemStore {
             .entry(keyspace.to_string())
             .and_modify(|entries| {
                 for doc in documents.clone() {
-                    entries.insert(doc.id(), (doc.last_updated(), false));
+                    entries.insert(doc.id().to_vec(), (doc.last_updated(), false));
                 }
             })
             .or_insert_with(|| {
                 HashMap::from_iter(
                     documents
                         .into_iter()
-                        .map(|doc| (doc.id(), (doc.last_updated(), false))),
+                        .map(|doc| (doc.id().to_vec(), (doc.last_updated(), false))),
                 )
             });
 

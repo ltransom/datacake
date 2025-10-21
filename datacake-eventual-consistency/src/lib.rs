@@ -520,12 +520,12 @@ where
 
         let keyspace = self.group.get_or_create_keyspace(keyspace).await;
         let doc = DocumentMetadata {
-            id: doc_id,
+            id: doc_id.clone(),
             last_updated,
         };
         let msg = Del {
             source: CONSISTENCY_SOURCE_ID,
-            doc,
+            doc: doc.clone(),
             _marker: PhantomData::<S>::default(),
         };
         keyspace.send(msg).await?;
@@ -539,6 +539,7 @@ where
         let factory = |node| {
             let clock = self.node.clock().clone();
             let keyspace = keyspace.name().to_string();
+            let doc_id = doc_id.clone();
             async move {
                 let channel = self.node.network().get_or_connect(node);
 

@@ -341,6 +341,11 @@ mod tests {
     use super::*;
     use crate::test_utils::MockStorage;
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     #[tokio::test]
     async fn test_groups_load_from_blank_storage() {
         let storage =
@@ -360,10 +365,10 @@ mod tests {
             "keyspace-4".to_string(),
         ];
         let metadata = vec![
-            (1, HLCTimestamp::new(Duration::from_secs(1), 0, 0), false),
-            (2, HLCTimestamp::new(Duration::from_secs(2), 0, 0), false),
-            (3, HLCTimestamp::new(Duration::from_secs(3), 3, 0), true),
-            (4, HLCTimestamp::new(Duration::from_secs(4), 0, 0), false),
+            (key(1), HLCTimestamp::new(Duration::from_secs(1), 0, 0), false),
+            (key(2), HLCTimestamp::new(Duration::from_secs(2), 0, 0), false),
+            (key(3), HLCTimestamp::new(Duration::from_secs(3), 3, 0), true),
+            (key(4), HLCTimestamp::new(Duration::from_secs(4), 0, 0), false),
         ];
 
         let keyspace_list_clone = keyspace_list.clone();

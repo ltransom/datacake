@@ -43,21 +43,21 @@
 //!
 //!     let handle = store.handle();
 //!
-//!     handle.put(KEYSPACE, 1, b"Hello, world".to_vec(), Consistency::All).await?;
+//!     handle.put(KEYSPACE, vec![1], b"Hello, world".to_vec(), Consistency::All).await?;
 //!
 //!     let doc = handle
-//!         .get(KEYSPACE, 1)
+//!         .get(KEYSPACE, vec![1])
 //!         .await?
 //!         .expect("Document should not be none");
-//!     assert_eq!(doc.id(), 1);
+//!     assert_eq!(doc.id(), &[1]);
 //!     assert_eq!(doc.data(), b"Hello, world");
 //!
-//!     handle.del(KEYSPACE, 1, Consistency::All).await?;
-//!     let doc = handle.get(KEYSPACE, 1).await?;
+//!     handle.del(KEYSPACE, vec![1], Consistency::All).await?;
+//!     let doc = handle.get(KEYSPACE, vec![1]).await?;
 //!     assert!(doc.is_none(), "No document should not exist!");
 //!
-//!     handle.del(KEYSPACE, 2, Consistency::All).await?;
-//!     let doc = handle.get(KEYSPACE, 2).await?;
+//!     handle.del(KEYSPACE, vec![2], Consistency::All).await?;
+//!     let doc = handle.get(KEYSPACE, vec![2]).await?;
 //!     assert!(doc.is_none(), "No document should not exist!");
 //!
 //!     node.shutdown().await;

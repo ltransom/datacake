@@ -25,7 +25,7 @@ async fn test_single_node_cluster() -> anyhow::Result<()> {
 
     // Test writing
     handle
-        .put(KEYSPACE, 1, b"Hello, world".to_vec(), Consistency::All)
+        .put(KEYSPACE, 1_u64.to_le_bytes().to_vec(), b"Hello, world".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
 
@@ -38,14 +38,14 @@ async fn test_single_node_cluster() -> anyhow::Result<()> {
     assert_eq!(doc.data(), b"Hello, world");
 
     handle
-        .del(KEYSPACE, 1, Consistency::All)
+        .del(KEYSPACE, 1_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Del value.");
     let doc = handle.get(KEYSPACE, 1).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     handle
-        .del(KEYSPACE, 2, Consistency::All)
+        .del(KEYSPACE, 2_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Del value which doesnt exist locally.");
     let doc = handle.get(KEYSPACE, 2).await.expect("Get value.");
@@ -62,7 +62,7 @@ async fn test_single_node_cluster_with_keyspace_handle() -> anyhow::Result<()> {
     let handle = store.handle_with_keyspace(KEYSPACE);
 
     // Test reading
-    let doc = handle.get(1).await.expect("Get value.");
+    let doc = handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // Test writing
@@ -72,7 +72,7 @@ async fn test_single_node_cluster_with_keyspace_handle() -> anyhow::Result<()> {
         .expect("Put value.");
 
     let doc = handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
@@ -80,14 +80,14 @@ async fn test_single_node_cluster_with_keyspace_handle() -> anyhow::Result<()> {
     assert_eq!(doc.data(), b"Hello, world");
 
     handle.del(1, Consistency::All).await.expect("Del value.");
-    let doc = handle.get(1).await.expect("Get value.");
+    let doc = handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     handle
         .del(2, Consistency::All)
         .await
         .expect("Del value which doesnt exist locally.");
-    let doc = handle.get(2).await.expect("Get value.");
+    let doc = handle.get(2_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     Ok(())

@@ -51,7 +51,7 @@ async fn test_single_node() -> anyhow::Result<()> {
     assert!(doc.is_none());
 
     handle
-        .del(KEYSPACE_1, 1, Consistency::All)
+        .del(KEYSPACE_1, 1_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Put doc.");
 
@@ -146,7 +146,7 @@ async fn test_multi_node() -> anyhow::Result<()> {
     assert!(doc.is_none());
 
     node_2_handle
-        .del(KEYSPACE_1, 1, Consistency::All)
+        .del(KEYSPACE_1, 1_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Put doc.");
 
