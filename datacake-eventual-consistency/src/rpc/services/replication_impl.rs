@@ -1,4 +1,4 @@
-use datacake_crdt::{HLCTimestamp, Key};
+use datacake_crdt::HLCTimestamp;
 use datacake_rpc::{Handler, Request, RpcService, ServiceRegistry, Status};
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -152,7 +152,7 @@ pub struct KeyspaceOrSwotSet {
 #[archive(check_bytes)]
 pub struct FetchDocs {
     pub keyspace: String,
-    pub doc_ids: Vec<Key>,
+    pub doc_ids: Vec<Vec<u8>>,
     pub timestamp: HLCTimestamp,
 }
 

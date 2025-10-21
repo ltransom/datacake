@@ -31,19 +31,22 @@
 //!         .add_extension(EventuallyConsistentStoreExtension::new(MemStore::default()))
 //!         .await
 //!         .expect("Create store.");
-//!     
+//!
 //!     let handle = store.handle();
+//!
+//!     // Helper to convert u64 to Vec<u8> key
+//!     let key = |n: u64| n.to_le_bytes().to_vec();
 //!
 //!     handle
 //!         .put(
 //!             "my-keyspace",
-//!             1,
+//!             key(1),
 //!             b"Hello, world! From keyspace 1.".to_vec(),
 //!             Consistency::All,
 //!         )
 //!         .await
 //!         .expect("Put doc.");
-//!     
+//!
 //!     Ok(())
 //! }
 //! ```

@@ -41,7 +41,7 @@ async fn test_consistency_all() -> anyhow::Result<()> {
 
     // Test writing
     node_1_handle
-        .put(1, b"Hello, world".to_vec(), Consistency::All)
+        .put(key(1), b"Hello, world".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
 
@@ -72,7 +72,7 @@ async fn test_consistency_all() -> anyhow::Result<()> {
 
     // Delete a key from the cluster
     node_3_handle
-        .del(1, Consistency::All)
+        .del(key(1), Consistency::All)
         .await
         .expect("Del value.");
 
@@ -88,7 +88,7 @@ async fn test_consistency_all() -> anyhow::Result<()> {
 
     // Delete a non-existent key from the cluster
     node_3_handle
-        .del(1, Consistency::All)
+        .del(key(1), Consistency::All)
         .await
         .expect("Del value.");
 
@@ -133,7 +133,7 @@ async fn test_consistency_none() -> anyhow::Result<()> {
 
     // Test writing
     node_1_handle
-        .put(1, b"Hello, world".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
 
@@ -173,7 +173,7 @@ async fn test_consistency_none() -> anyhow::Result<()> {
 
     // Delete a key from the cluster
     node_3_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Del value.");
 
@@ -191,7 +191,7 @@ async fn test_consistency_none() -> anyhow::Result<()> {
 
     // Delete a non-existent key from the cluster
     node_3_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Del value.");
 
@@ -233,17 +233,17 @@ async fn test_async_operations() -> anyhow::Result<()> {
     // These operations all happen at the exact same time. But they will always be applied in the
     // same deterministic order. So we know node-3 will win.
     node_1_handle
-        .put(1, b"Hello, world from node-1".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-1".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_2_handle
-        .put(1, b"Hello, world from node-2".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-2".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_3_handle
-        .put(1, b"Hello, world from node-3".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-3".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
 
@@ -299,7 +299,7 @@ async fn test_async_operations() -> anyhow::Result<()> {
     // Node 2 will win, even though they're technically happening at the exact same time.
     node_1_handle
         .put(
-            1,
+            key(1),
             b"Hello, world from node-1 but updated".to_vec(),
             Consistency::None,
         )
@@ -307,7 +307,7 @@ async fn test_async_operations() -> anyhow::Result<()> {
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_2_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Delete value.");
 

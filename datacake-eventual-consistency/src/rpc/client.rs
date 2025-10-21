@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 
-use datacake_crdt::{HLCTimestamp, Key, OrSWotSet};
+use datacake_crdt::{HLCTimestamp, OrSWotSet};
 use datacake_node::{Clock, NodeId};
 use datacake_rpc::{Channel, RpcClient, Status};
 
@@ -98,7 +98,7 @@ where
     pub async fn del(
         &mut self,
         keyspace: impl Into<String>,
-        id: Key,
+        id: Vec<u8>,
         ts: HLCTimestamp,
     ) -> Result<(), Status> {
         let timestamp = self.clock.get_time().await;
@@ -224,7 +224,7 @@ where
     pub async fn fetch_docs(
         &mut self,
         keyspace: impl Into<String>,
-        doc_ids: Vec<Key>,
+        doc_ids: Vec<Vec<u8>>,
     ) -> Result<Vec<Document>, Status> {
         let timestamp = self.clock.get_time().await;
         let inner = self

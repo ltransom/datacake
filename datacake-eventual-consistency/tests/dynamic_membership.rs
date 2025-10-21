@@ -45,11 +45,11 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await?;
 
     node_1
-        .wait_for_nodes(&[key(2)], Duration::from_secs(30))
+        .wait_for_nodes(&[2], Duration::from_secs(30))
         .await
         .expect("Nodes should connect within timeout.");
     node_2
-        .wait_for_nodes(&[key(1)], Duration::from_secs(30))
+        .wait_for_nodes(&[1], Duration::from_secs(30))
         .await
         .expect("Nodes should connect within timeout.");
     let store_1 = node_1
@@ -63,11 +63,11 @@ pub async fn test_member_join() -> anyhow::Result<()> {
     let node_2_handle = store_2.handle_with_keyspace("my-keyspace");
 
     node_1_handle
-        .put(1, b"Hello, world from node-1".to_vec(), Consistency::All)
+        .put(key(1), b"Hello, world from node-1".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
     node_2_handle
-        .put(2, b"Hello, world from node-2".to_vec(), Consistency::All)
+        .put(key(2), b"Hello, world from node-2".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
 
@@ -115,7 +115,7 @@ pub async fn test_member_join() -> anyhow::Result<()> {
     let node_3_handle = store_3.handle_with_keyspace("my-keyspace");
 
     node_3_handle
-        .put(3, b"Hello, world from node-3".to_vec(), Consistency::All)
+        .put(key(3), b"Hello, world from node-3".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
 
