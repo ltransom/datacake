@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+// Helper function to convert u64 to Vec<u8> for keys
+fn key(n: u64) -> Vec<u8> {
+    n.to_le_bytes().to_vec()
+}
+
 use datacake_eventual_consistency::test_utils::MemStore;
 use datacake_eventual_consistency::EventuallyConsistentStoreExtension;
 use datacake_node::{
@@ -46,7 +51,7 @@ async fn test_consistency_all() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Nodes 2 and 3 should also have the value immediately due to the consistency level.
@@ -55,14 +60,14 @@ async fn test_consistency_all() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
     let doc = node_3_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Delete a key from the cluster
@@ -138,7 +143,7 @@ async fn test_consistency_none() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Nodes 2 and 3 will not have the value yet as syncing has not taken place.
@@ -156,14 +161,14 @@ async fn test_consistency_none() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
     let doc = node_3_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Delete a key from the cluster
@@ -248,21 +253,21 @@ async fn test_async_operations() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_2_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-2");
     let doc = node_3_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
 
     tokio::time::sleep(Duration::from_secs(10)).await;
@@ -273,21 +278,21 @@ async fn test_async_operations() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3"); // TODO: This fails if the logical clock isn't correct??
     let doc = node_2_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
     let doc = node_3_handle
         .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
 
     // This goes for all operations.
@@ -312,7 +317,7 @@ async fn test_async_operations() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1 but updated");
 
     // Node 2 has only seen it's delete so far, so it assumes it's correct.

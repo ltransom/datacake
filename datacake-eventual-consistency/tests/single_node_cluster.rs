@@ -1,4 +1,9 @@
 use datacake_eventual_consistency::test_utils::MemStore;
+
+// Helper function to convert u64 to Vec<u8> for keys
+fn key(n: u64) -> Vec<u8> {
+    n.to_le_bytes().to_vec()
+}
 use datacake_eventual_consistency::{
     EventuallyConsistentStore,
     EventuallyConsistentStoreExtension,
@@ -20,7 +25,7 @@ async fn test_single_node_cluster() -> anyhow::Result<()> {
     let handle = store.handle();
 
     // Test reading
-    let doc = handle.get(KEYSPACE, 1).await.expect("Get value.");
+    let doc = handle.get(KEYSPACE, key(1)).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // Test writing
@@ -30,25 +35,25 @@ async fn test_single_node_cluster() -> anyhow::Result<()> {
         .expect("Put value.");
 
     let doc = handle
-        .get(KEYSPACE, 1)
+        .get(KEYSPACE, key(1))
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     handle
         .del(KEYSPACE, 1_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Del value.");
-    let doc = handle.get(KEYSPACE, 1).await.expect("Get value.");
+    let doc = handle.get(KEYSPACE, key(1)).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     handle
         .del(KEYSPACE, 2_u64.to_le_bytes().to_vec(), Consistency::All)
         .await
         .expect("Del value which doesnt exist locally.");
-    let doc = handle.get(KEYSPACE, 2).await.expect("Get value.");
+    let doc = handle.get(KEYSPACE, key(2)).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     Ok(())
@@ -76,7 +81,7 @@ async fn test_single_node_cluster_with_keyspace_handle() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     handle.del(1, Consistency::All).await.expect("Del value.");
@@ -102,7 +107,7 @@ async fn test_single_node_cluster_bulk_op() -> anyhow::Result<()> {
 
     // Test reading
     let num_docs = handle
-        .get_many(KEYSPACE, [1])
+        .get_many(KEYSPACE, [key(1)])
         .await
         .expect("Get value.")
         .count();
@@ -115,19 +120,19 @@ async fn test_single_node_cluster_bulk_op() -> anyhow::Result<()> {
         .expect("Put value.");
 
     let docs = handle
-        .get_many(KEYSPACE, [1])
+        .get_many(KEYSPACE, [key(1)])
         .await
         .expect("Get value.")
         .collect::<Vec<_>>();
-    assert_eq!(docs[0].id(), 1);
-    assert_eq!(docs[0].data(), b"Hello, world");
+    assert_eq!(docs[key(0)].id(), 1);
+    assert_eq!(docs[key(0)].data(), b"Hello, world");
 
     handle
-        .del_many(KEYSPACE, [1], Consistency::All)
+        .del_many(KEYSPACE, [key(1)], Consistency::All)
         .await
         .expect("Del value.");
     let num_docs = handle
-        .get_many(KEYSPACE, [1])
+        .get_many(KEYSPACE, [key(1)])
         .await
         .expect("Get value.")
         .count();
@@ -155,7 +160,7 @@ async fn test_single_node_cluster_bulk_op_with_keyspace_handle() -> anyhow::Resu
     let handle = store.handle_with_keyspace(KEYSPACE);
 
     // Test reading
-    let num_docs = handle.get_many([1]).await.expect("Get value.").count();
+    let num_docs = handle.get_many([key(1)]).await.expect("Get value.").count();
     assert_eq!(num_docs, 0, "No document should not exist!");
 
     // Test writing
@@ -165,18 +170,18 @@ async fn test_single_node_cluster_bulk_op_with_keyspace_handle() -> anyhow::Resu
         .expect("Put value.");
 
     let docs = handle
-        .get_many([1])
+        .get_many([key(1)])
         .await
         .expect("Get value.")
         .collect::<Vec<_>>();
-    assert_eq!(docs[0].id(), 1);
-    assert_eq!(docs[0].data(), b"Hello, world");
+    assert_eq!(docs[key(0)].id(), 1);
+    assert_eq!(docs[key(0)].data(), b"Hello, world");
 
     handle
-        .del_many([1], Consistency::All)
+        .del_many([key(1)], Consistency::All)
         .await
         .expect("Del value.");
-    let num_docs = handle.get_many([1]).await.expect("Get value.").count();
+    let num_docs = handle.get_many([key(1)]).await.expect("Get value.").count();
     assert_eq!(num_docs, 0, "No document should not exist!");
 
     handle

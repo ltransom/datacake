@@ -14,6 +14,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 use tokio::time::interval;
 
 use super::NUM_SOURCES;
+use crate::error::TypeMismatchError;
 use crate::keyspace::messages::PurgeDeletes;
 use crate::keyspace::KeyspaceActor;
 use crate::Storage;
@@ -32,6 +33,7 @@ where
     clock: Clock,
     storage: Arc<S>,
     keyspace_timestamps: Arc<RwLock<KeyspaceTimestamps>>,
+    keyspace_types: Arc<RwLock<KeyspaceTypeInfo>>,
     group: Arc<RwLock<KeyspaceMap<S>>>,
 }
 
@@ -44,6 +46,7 @@ where
             clock: self.clock.clone(),
             storage: self.storage.clone(),
             keyspace_timestamps: self.keyspace_timestamps.clone(),
+            keyspace_types: self.keyspace_types.clone(),
             group: self.group.clone(),
         }
     }
@@ -73,6 +76,7 @@ where
             clock,
             storage,
             keyspace_timestamps: Default::default(),
+            keyspace_types: Default::default(),
             group: Default::default(),
         };
 
@@ -333,6 +337,52 @@ impl Deref for KeyspaceTimestamps {
 impl DerefMut for KeyspaceTimestamps {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+/// Tracks the key type for each keyspace to ensure type consistency.
+#[derive(Default, Clone, Debug)]
+pub struct KeyspaceTypeInfo(pub HashMap<String, String>);
+
+impl KeyspaceTypeInfo {
+    /// Registers a new keyspace with its associated key type.
+    ///
+    /// If the keyspace already exists with a different type, returns an error.
+    pub fn register_or_validate(
+        &mut self,
+        keyspace: &str,
+        type_name: &str,
+    ) -> Result<(), TypeMismatchError> {
+        if let Some(existing_type) = self.0.get(keyspace) {
+            if existing_type != type_name {
+                return Err(TypeMismatchError::KeyTypeMismatch {
+                    keyspace: keyspace.to_string(),
+                    expected: existing_type.clone(),
+                    actual: type_name.to_string(),
+                });
+            }
+        } else {
+            self.0.insert(keyspace.to_string(), type_name.to_string());
+        }
+        Ok(())
+    }
+}
+
+impl<S> KeyspaceGroup<S>
+where
+    S: Storage,
+{
+    /// Registers or validates the key type for a given keyspace.
+    ///
+    /// This ensures that a keyspace is always accessed with the same key type
+    /// throughout the lifetime of the process.
+    pub fn register_keyspace_type(
+        &self,
+        keyspace: &str,
+        type_name: &str,
+    ) -> Result<(), TypeMismatchError> {
+        let mut guard = self.keyspace_types.write();
+        guard.register_or_validate(keyspace, type_name)
     }
 }
 

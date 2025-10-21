@@ -61,6 +61,7 @@ mod replication;
 mod rpc;
 mod statistics;
 mod storage;
+mod typed_handle;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
@@ -72,7 +73,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use datacake_crdt::Key;
+use datacake_crdt::{DatacakeKey, Key};
 use datacake_node::{
     ClusterExtension,
     Consistency,
@@ -81,7 +82,7 @@ use datacake_node::{
     DatacakeNode,
     Nodes,
 };
-pub use error::StoreError;
+pub use error::{StoreError, TypeMismatchError};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 pub use statistics::SystemStatistics;
@@ -90,6 +91,7 @@ pub use storage::test_suite;
 pub use storage::{BulkMutationError, ProgressTracker, PutContext, Storage};
 
 pub use self::core::{Document, DocumentMetadata};
+pub use self::typed_handle::TypedKeyspaceHandle;
 use crate::core::DocVec;
 use crate::keyspace::{
     Del,
@@ -274,6 +276,56 @@ where
             keyspace: Cow::Owned(keyspace.into()),
         }
     }
+
+    /// Creates a new type-safe handle to the underlying storage system with a preset keyspace.
+    ///
+    /// This method registers the key type for the keyspace and validates that all future
+    /// accesses use the same key type. If the keyspace has already been accessed with a
+    /// different key type, this returns a `TypeMismatchError`.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `K` - The key type that implements `DatacakeKey`. Common types include:
+    ///   - `u64` for numeric keys
+    ///   - `String` for text-based keys
+    ///   - `uuid::Uuid` for UUID keys (requires `uuid` feature)
+    ///   - `(String, String)` for composite keys
+    ///   - Custom types implementing `DatacakeKey`
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use datacake_eventual_consistency::EventuallyConsistentStore;
+    /// # use datacake_eventual_consistency::test_utils::MemStore;
+    /// # async fn example(store: EventuallyConsistentStore<MemStore>) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Create a handle with String keys
+    /// let users = store.typed_handle::<String>("users")?;
+    ///
+    /// // Create a handle with u64 keys
+    /// let counters = store.typed_handle::<u64>("counters")?;
+    ///
+    /// // This would fail if we try to access "users" with a different type:
+    /// // let fail = store.typed_handle::<u64>("users")?; // Error!
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn typed_handle<K>(
+        &self,
+        keyspace: impl Into<String>,
+    ) -> Result<TypedKeyspaceHandle<K, S>, TypeMismatchError>
+    where
+        K: DatacakeKey,
+    {
+        let keyspace_str = keyspace.into();
+        let type_name = std::any::type_name::<K>();
+
+        // Register or validate the key type for this keyspace
+        self.group.register_keyspace_type(&keyspace_str, type_name)?;
+
+        // Create the untyped handle and wrap it
+        let untyped = self.handle_with_keyspace(keyspace_str);
+        Ok(TypedKeyspaceHandle::new(untyped))
+    }
 }
 
 impl<S> Drop for EventuallyConsistentStore<S>
@@ -332,6 +384,45 @@ where
             inner: self.clone(),
             keyspace: Cow::Owned(keyspace.into()),
         }
+    }
+
+    /// Creates a new type-safe handle to the underlying storage system with a preset keyspace.
+    ///
+    /// This method registers the key type for the keyspace and validates that all future
+    /// accesses use the same key type. If the keyspace has already been accessed with a
+    /// different key type, this returns a `TypeMismatchError`.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `K` - The key type that implements `DatacakeKey`
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// # use datacake_eventual_consistency::ReplicatedStoreHandle;
+    /// # use datacake_eventual_consistency::test_utils::MemStore;
+    /// # async fn example(handle: ReplicatedStoreHandle<MemStore>) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Create a typed handle with String keys
+    /// let users = handle.typed_keyspace::<String>("users")?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn typed_keyspace<K>(
+        &self,
+        keyspace: impl Into<String>,
+    ) -> Result<TypedKeyspaceHandle<K, S>, TypeMismatchError>
+    where
+        K: DatacakeKey,
+    {
+        let keyspace_str = keyspace.into();
+        let type_name = std::any::type_name::<K>();
+
+        // Register or validate the key type for this keyspace
+        self.group.register_keyspace_type(&keyspace_str, type_name)?;
+
+        // Create the untyped handle and wrap it
+        let untyped = self.with_keyspace(keyspace_str);
+        Ok(TypedKeyspaceHandle::new(untyped))
     }
 
     /// Retrieves the list of keyspaces from the underlying storage.

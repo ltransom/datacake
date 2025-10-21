@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+// Helper function to convert u64 to Vec<u8> for keys
+fn key(n: u64) -> Vec<u8> {
+    n.to_le_bytes().to_vec()
+}
+
 use datacake_eventual_consistency::test_utils::MemStore;
 use datacake_eventual_consistency::EventuallyConsistentStoreExtension;
 use datacake_node::{ConnectionConfig, DCAwareSelector, DatacakeNodeBuilder};

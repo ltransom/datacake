@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+// Helper function to convert u64 to Vec<u8> for keys
+fn key(n: u64) -> Vec<u8> {
+    n.to_le_bytes().to_vec()
+}
+
 use datacake_eventual_consistency::test_utils::MemStore;
 use datacake_eventual_consistency::EventuallyConsistentStoreExtension;
 use datacake_node::{
@@ -40,11 +45,11 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await?;
 
     node_1
-        .wait_for_nodes(&[2], Duration::from_secs(30))
+        .wait_for_nodes(&[key(2)], Duration::from_secs(30))
         .await
         .expect("Nodes should connect within timeout.");
     node_2
-        .wait_for_nodes(&[1], Duration::from_secs(30))
+        .wait_for_nodes(&[key(1)], Duration::from_secs(30))
         .await
         .expect("Nodes should connect within timeout.");
     let store_1 = node_1
@@ -71,14 +76,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_1_handle
         .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 2);
+    assert_eq!(doc.id(), &key(2));
     assert_eq!(doc.data(), b"Hello, world from node-2");
 
     let doc = node_2_handle
@@ -86,14 +91,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_2_handle
         .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 2);
+    assert_eq!(doc.id(), &key(2));
     assert_eq!(doc.data(), b"Hello, world from node-2");
 
     // Node-3 joins the cluster.
@@ -132,14 +137,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_3_handle
         .get(2_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 2);
+    assert_eq!(doc.id(), &key(2));
     assert_eq!(doc.data(), b"Hello, world from node-2");
 
     let doc = node_1_handle
@@ -147,14 +152,14 @@ pub async fn test_member_join() -> anyhow::Result<()> {
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 3);
+    assert_eq!(doc.id(), &key(3));
     assert_eq!(doc.data(), b"Hello, world from node-3");
     let doc = node_2_handle
         .get(3_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 3);
+    assert_eq!(doc.id(), &key(3));
     assert_eq!(doc.data(), b"Hello, world from node-3");
 
     Ok(())
