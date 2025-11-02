@@ -10,6 +10,22 @@ use thiserror::Error;
 use crate::storage::BulkMutationError;
 
 #[derive(Debug, Error)]
+/// An error that occurs when attempting to access a keyspace with a different key type
+/// than it was created with.
+pub enum TypeMismatchError {
+    #[error("Keyspace '{keyspace}' was created with key type '{expected}' but accessed with '{actual}'")]
+    /// The keyspace was previously accessed with a different key type.
+    KeyTypeMismatch {
+        /// The name of the keyspace that had a type mismatch.
+        keyspace: String,
+        /// The expected key type name.
+        expected: String,
+        /// The actual key type name that was used in the access attempt.
+        actual: String,
+    },
+}
+
+#[derive(Debug, Error)]
 /// A wrapping error for the store which can potentially fail under situations.
 pub enum StoreError<E: Error + Send + 'static> {
     #[error("{0}")]

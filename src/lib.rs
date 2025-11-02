@@ -46,6 +46,10 @@
 //! use datacake::eventual_consistency::test_utils::MemStore;
 //! use datacake::eventual_consistency::EventuallyConsistentStoreExtension;
 //!
+//! fn key(n: u64) -> Vec<u8> {
+//!     n.to_le_bytes().to_vec()
+//! }
+//!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
 //!     let addr = "127.0.0.1:8080".parse::<SocketAddr>().unwrap();
@@ -65,7 +69,7 @@
 //!     handle
 //!         .put(
 //!             "my-keyspace",
-//!             1,
+//!             key(1),
 //!             b"Hello, world! From keyspace 1.".to_vec(),
 //!             Consistency::All,
 //!         )

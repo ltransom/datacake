@@ -1,5 +1,10 @@
 use std::time::Duration;
 
+// Helper function to convert u64 to Vec<u8> for keys
+fn key(n: u64) -> Vec<u8> {
+    n.to_le_bytes().to_vec()
+}
+
 use datacake_eventual_consistency::test_utils::MemStore;
 use datacake_eventual_consistency::EventuallyConsistentStoreExtension;
 use datacake_node::{
@@ -31,68 +36,68 @@ async fn test_consistency_all() -> anyhow::Result<()> {
     let node_3_handle = store_3.handle_with_keyspace("my-keyspace");
 
     // Test reading
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // Test writing
     node_1_handle
-        .put(1, b"Hello, world".to_vec(), Consistency::All)
+        .put(key(1), b"Hello, world".to_vec(), Consistency::All)
         .await
         .expect("Put value.");
 
     // Node 1 should have the value as it's just written locally.
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Nodes 2 and 3 should also have the value immediately due to the consistency level.
     let doc = node_2_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
     let doc = node_3_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Delete a key from the cluster
     node_3_handle
-        .del(1, Consistency::All)
+        .del(key(1), Consistency::All)
         .await
         .expect("Del value.");
 
     // Node 3 should have the value as it's just written locally.
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // Nodes 2 and 1 should also have the value immediately due to the consistency level.
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
 
     // Delete a non-existent key from the cluster
     node_3_handle
-        .del(1, Consistency::All)
+        .del(key(1), Consistency::All)
         .await
         .expect("Del value.");
 
     // All of the nodes should register the delete.
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
 
     node_1.shutdown().await;
@@ -123,28 +128,28 @@ async fn test_consistency_none() -> anyhow::Result<()> {
     let node_3_handle = store_3.handle_with_keyspace("my-keyspace");
 
     // Test reading
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // Test writing
     node_1_handle
-        .put(1, b"Hello, world".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
 
     // Node 1 should have the value as it's just written locally.
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Nodes 2 and 3 will not have the value yet as syncing has not taken place.
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     // 10 seconds should be enough for this test to propagate state without becoming flaky.
@@ -152,50 +157,50 @@ async fn test_consistency_none() -> anyhow::Result<()> {
 
     // Nodes 2 and 3 should now see the updated value.
     let doc = node_2_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
     let doc = node_3_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world");
 
     // Delete a key from the cluster
     node_3_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Del value.");
 
     // Node 3 should have the value as it's just written locally.
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
 
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // Nodes should be caught up now.
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
 
     // Delete a non-existent key from the cluster
     node_3_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Del value.");
 
     // All of the nodes should register the delete.
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "No document should not exist!");
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none());
 
     node_1.shutdown().await;
@@ -228,73 +233,73 @@ async fn test_async_operations() -> anyhow::Result<()> {
     // These operations all happen at the exact same time. But they will always be applied in the
     // same deterministic order. So we know node-3 will win.
     node_1_handle
-        .put(1, b"Hello, world from node-1".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-1".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_2_handle
-        .put(1, b"Hello, world from node-2".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-2".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_3_handle
-        .put(1, b"Hello, world from node-3".to_vec(), Consistency::None)
+        .put(key(1), b"Hello, world from node-3".to_vec(), Consistency::None)
         .await
         .expect("Put value.");
 
     // *sigh* no consistency in sight! - This is because we haven't given any time to sync yet.
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1");
     let doc = node_2_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-2");
     let doc = node_3_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
 
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // Man I love CRDTs, look at how easy this was! They're all the same now.
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3"); // TODO: This fails if the logical clock isn't correct??
     let doc = node_2_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
     let doc = node_3_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-3");
 
     // This goes for all operations.
     // Node 2 will win, even though they're technically happening at the exact same time.
     node_1_handle
         .put(
-            1,
+            key(1),
             b"Hello, world from node-1 but updated".to_vec(),
             Consistency::None,
         )
@@ -302,31 +307,31 @@ async fn test_async_operations() -> anyhow::Result<()> {
         .expect("Put value.");
     tokio::time::sleep(Duration::from_millis(2)).await;
     node_2_handle
-        .del(1, Consistency::None)
+        .del(key(1), Consistency::None)
         .await
         .expect("Delete value.");
 
     // Node 1 has only seen it's put so far, so it assumes it's correct.
     let doc = node_1_handle
-        .get(1)
+        .get(1_u64.to_le_bytes().to_vec())
         .await
         .expect("Get value.")
         .expect("Document should not be none");
-    assert_eq!(doc.id(), 1);
+    assert_eq!(doc.id(), &key(1));
     assert_eq!(doc.data(), b"Hello, world from node-1 but updated");
 
     // Node 2 has only seen it's delete so far, so it assumes it's correct.
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "Document should be deleted.");
 
     tokio::time::sleep(Duration::from_secs(10)).await;
 
     // And now everything is consistent.
-    let doc = node_1_handle.get(1).await.expect("Get value.");
+    let doc = node_1_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "Document should be deleted.");
-    let doc = node_2_handle.get(1).await.expect("Get value.");
+    let doc = node_2_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "Document should be deleted.");
-    let doc = node_3_handle.get(1).await.expect("Get value.");
+    let doc = node_3_handle.get(1_u64.to_le_bytes().to_vec()).await.expect("Get value.");
     assert!(doc.is_none(), "Document should be deleted.");
 
     node_1.shutdown().await;

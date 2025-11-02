@@ -1,4 +1,4 @@
-use datacake_crdt::{HLCTimestamp, Key};
+use datacake_crdt::HLCTimestamp;
 use datacake_rpc::{Handler, Request, RpcService, ServiceRegistry, Status};
 use rkyv::{Archive, Deserialize, Serialize};
 
@@ -95,7 +95,7 @@ where
 
         if msg.doc_ids.len() == 1 {
             let documents = storage
-                .get(&msg.keyspace, msg.doc_ids[0])
+                .get(&msg.keyspace, msg.doc_ids[0].clone())
                 .await
                 .map_err(|e| Status::internal(e.to_string()))?
                 .map(|doc| vec![doc])
@@ -152,8 +152,7 @@ pub struct KeyspaceOrSwotSet {
 #[archive(check_bytes)]
 pub struct FetchDocs {
     pub keyspace: String,
-    #[with(rkyv::with::Raw)]
-    pub doc_ids: Vec<Key>,
+    pub doc_ids: Vec<Vec<u8>>,
     pub timestamp: HLCTimestamp,
 }
 
@@ -174,6 +173,11 @@ mod tests {
     use crate::keyspace::{KeyspaceTimestamps, Serialize, Set, READ_REPAIR_SOURCE_ID};
     use crate::test_utils::MemStore;
     use crate::Document;
+
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
 
     #[tokio::test]
     async fn test_poll_keyspace() {
@@ -223,7 +227,7 @@ mod tests {
         keyspace
             .send(Set {
                 source: READ_REPAIR_SOURCE_ID,
-                doc: Document::new(1, clock.get_time().await, Vec::new()),
+                doc: Document::new(key(1), clock.get_time().await, Vec::new()),
                 ctx: None,
                 _marker: PhantomData::<MemStore>::default(),
             })
@@ -265,7 +269,7 @@ mod tests {
 
         let keyspace = group.get_or_create_keyspace(KEYSPACE).await;
 
-        let doc = Document::new(1, clock.get_time().await, b"Hello, world".to_vec());
+        let doc = Document::new(key(1), clock.get_time().await, b"Hello, world".to_vec());
         keyspace
             .send(Set {
                 source: READ_REPAIR_SOURCE_ID,
@@ -280,7 +284,7 @@ mod tests {
         let fetch_docs_req = Request::using_owned(FetchDocs {
             timestamp,
             keyspace: KEYSPACE.to_string(),
-            doc_ids: vec![1],
+            doc_ids: vec![key(1)],
         })
         .await;
 

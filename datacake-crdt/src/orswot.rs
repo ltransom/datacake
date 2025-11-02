@@ -9,7 +9,7 @@ use rkyv::{Archive, Deserialize, Serialize};
 
 use crate::timestamp::HLCTimestamp;
 
-pub type Key = u64;
+pub type Key = Vec<u8>;
 pub type StateChanges = Vec<(Key, HLCTimestamp)>;
 
 /// The period of time, to remove from the
@@ -199,13 +199,13 @@ impl<const N: usize> NodeVersions<N> {
 /// let mut node_b_set = OrSWotSet::<1>::default();
 ///
 /// // Insert a new key with a new timestamp in set A.
-/// node_a_set.insert(1, node_a.send().unwrap());
+/// node_a_set.insert(vec![1], node_a.send().unwrap());
 ///
 /// // Insert a new entry in set B.
-/// node_b_set.insert(2, node_b.send().unwrap());
+/// node_b_set.insert(vec![2], node_b.send().unwrap());
 ///
 /// // Set A has key `1` removed.
-/// node_a_set.delete(1, node_a.send().unwrap());
+/// node_a_set.delete(vec![1], node_a.send().unwrap());
 ///
 /// // Merging set B with set A and vice versa.
 /// // Our sets are now aligned without conflicts.
@@ -213,8 +213,8 @@ impl<const N: usize> NodeVersions<N> {
 /// node_a_set.merge(node_b_set.clone());
 ///
 /// // Set A and B should both see that key `1` has been deleted.
-/// assert!(node_a_set.get(&1).is_none(), "Key should be correctly removed.");
-/// assert!(node_b_set.get(&1).is_none(), "Key should be correctly removed.");
+/// assert!(node_a_set.get(&vec![1]).is_none(), "Key should be correctly removed.");
+/// assert!(node_b_set.get(&vec![1]).is_none(), "Key should be correctly removed.");
 /// ```
 pub struct OrSWotSet<const N: usize = 1> {
     entries: BTreeMap<Key, HLCTimestamp>,
@@ -251,11 +251,11 @@ impl<const N: usize> OrSWotSet<N> {
         let mut removals = Vec::new();
 
         for (key, ts) in other.entries.iter() {
-            self.check_self_then_insert_to(*key, *ts, &mut changes);
+            self.check_self_then_insert_to(key.clone(), *ts, &mut changes);
         }
 
         for (key, ts) in other.dead.iter() {
-            self.check_self_then_insert_to(*key, *ts, &mut removals);
+            self.check_self_then_insert_to(key.clone(), *ts, &mut removals);
         }
 
         (changes, removals)
@@ -538,6 +538,11 @@ mod tests {
 
     use super::*;
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     #[test]
     fn test_op_order() {
         let mut node_a = HLCTimestamp::now(0, 0);
@@ -548,29 +553,29 @@ mod tests {
         let ts_a = node_a.send().unwrap();
         let ts_b = node_b.send().unwrap();
 
-        node_a_set.insert(1, ts_a);
-        node_a_set.insert(1, ts_b);
+        node_a_set.insert(key(1), ts_a);
+        node_a_set.insert(key(1), ts_b);
 
-        let retrieved = node_a_set.get(&1);
+        let retrieved = node_a_set.get(&key(1));
         assert_eq!(retrieved, Some(&ts_b), "Node B should win the operation.");
 
         let mut node_a_set = OrSWotSet::<1>::default();
         let mut node_b_set = OrSWotSet::<1>::default();
 
-        node_a_set.insert(1, ts_a);
-        node_b_set.insert(1, ts_b);
+        node_a_set.insert(key(1), ts_a);
+        node_b_set.insert(key(1), ts_b);
 
         node_a_set.merge(node_b_set.clone());
         node_b_set.merge(node_a_set.clone());
 
-        let retrieved = node_a_set.get(&1);
+        let retrieved = node_a_set.get(&key(1));
         assert_eq!(
             retrieved,
             Some(&ts_b),
             "Node B should win the operation after merging set A."
         );
 
-        let retrieved = node_b_set.get(&1);
+        let retrieved = node_b_set.get(&key(1));
         assert_eq!(
             retrieved,
             Some(&ts_b),
@@ -587,16 +592,16 @@ mod tests {
         let mut node_a_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
-        node_a_set.insert(3, node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
+        node_a_set.insert(key(3), node_a.send().unwrap());
 
         // We create our new state on node b's side.
         let mut node_b_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_b_set.insert(1, node_b.send().unwrap());
-        node_b_set.insert(4, node_b.send().unwrap());
+        node_b_set.insert(key(1), node_b.send().unwrap());
+        node_b_set.insert(key(4), node_b.send().unwrap());
 
         node_a_set.merge(node_b_set);
 
@@ -606,19 +611,19 @@ mod tests {
         );
 
         assert!(
-            node_a_set.entries.get(&1).is_some(),
+            node_a_set.entries.get(&key(1)).is_some(),
             "Expected entry with key 1 to exist."
         );
         assert!(
-            node_a_set.entries.get(&2).is_some(),
+            node_a_set.entries.get(&key(2)).is_some(),
             "Expected entry with key 2 to exist."
         );
         assert!(
-            node_a_set.entries.get(&3).is_some(),
+            node_a_set.entries.get(&key(3)).is_some(),
             "Expected entry with key 3 to exist."
         );
         assert!(
-            node_a_set.entries.get(&4).is_some(),
+            node_a_set.entries.get(&key(4)).is_some(),
             "Expected entry with key 4 to exist."
         );
     }
@@ -634,9 +639,9 @@ mod tests {
         // We add a new set of entries into our set.
         // It's important that our `3` key is first here, as it means the counter
         // of the HLC timestamp will mean the delete succeeds.
-        node_a_set.insert(3, node_a.send().unwrap());
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
+        node_a_set.insert(key(3), node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
 
         // We create our new state on node b's side.
         let mut node_b_set = OrSWotSet::<1>::default();
@@ -644,28 +649,28 @@ mod tests {
         // We add a new set of entries into our set.
         // These entries effectively happen at the same time as node A in our test, just because
         // of the execution speed.
-        node_b_set.insert(1, node_b.send().unwrap());
-        node_b_set.delete(3, node_b.send().unwrap());
+        node_b_set.insert(key(1), node_b.send().unwrap());
+        node_b_set.delete(key(3), node_b.send().unwrap());
 
         // When merged, the set should mark key `3` as deleted
         // and ignore the insert on the original set.
         node_a_set.merge(node_b_set.clone());
 
         assert!(
-            node_a_set.dead.contains_key(&3),
+            node_a_set.dead.contains_key(&key(3)),
             "SET A: Expected key 3 to be marked as dead."
         );
 
         assert!(
-            node_a_set.entries.get(&1).is_some(),
+            node_a_set.entries.get(&key(1)).is_some(),
             "SET A: Expected entry with key 1 to exist."
         );
         assert!(
-            node_a_set.entries.get(&2).is_some(),
+            node_a_set.entries.get(&key(2)).is_some(),
             "SET A: Expected entry with key 2 to exist."
         );
         assert!(
-            node_a_set.entries.get(&3).is_none(),
+            node_a_set.entries.get(&key(3)).is_none(),
             "SET A: Expected entry with key 3 to NOT exist."
         );
 
@@ -673,20 +678,20 @@ mod tests {
         node_b_set.merge(node_a_set);
 
         assert!(
-            node_b_set.dead.contains_key(&3),
+            node_b_set.dead.contains_key(&key(3)),
             "SET B: Expected key 3 to be marked as dead."
         );
 
         assert!(
-            node_b_set.entries.get(&1).is_some(),
+            node_b_set.entries.get(&key(1)).is_some(),
             "SET B: Expected entry with key 1 to exist."
         );
         assert!(
-            node_b_set.entries.get(&2).is_some(),
+            node_b_set.entries.get(&key(2)).is_some(),
             "SET B: Expected entry with key 2 to exist."
         );
         assert!(
-            node_b_set.entries.get(&3).is_none(),
+            node_b_set.entries.get(&key(3)).is_none(),
             "SET B: Expected entry with key 3 to NOT exist."
         );
     }
@@ -704,34 +709,34 @@ mod tests {
         let mut node_a_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
-        node_a_set.insert(3, node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
+        node_a_set.insert(key(3), node_a.send().unwrap());
 
         // We create our new state on node b's side.
         let mut node_b_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_b_set.insert(1, node_b.send().unwrap());
-        node_b_set.delete(3, node_b.send().unwrap());
+        node_b_set.insert(key(1), node_b.send().unwrap());
+        node_b_set.delete(key(3), node_b.send().unwrap());
 
         node_a_set.merge(node_b_set.clone());
 
         assert!(
-            node_a_set.dead.contains_key(&3),
+            node_a_set.dead.contains_key(&key(3)),
             "Expected key 3 to be marked as dead."
         );
 
         assert!(
-            node_a_set.entries.get(&1).is_some(),
+            node_a_set.entries.get(&key(1)).is_some(),
             "Expected entry with key 1 to exist."
         );
         assert!(
-            node_a_set.entries.get(&2).is_some(),
+            node_a_set.entries.get(&key(2)).is_some(),
             "Expected entry with key 2 to exist."
         );
         assert!(
-            node_a_set.entries.get(&3).is_none(),
+            node_a_set.entries.get(&key(3)).is_none(),
             "Expected entry with key 3 to NOT exist."
         );
     }
@@ -749,23 +754,23 @@ mod tests {
         let mut node_a_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
-        node_a_set.insert(3, node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
+        node_a_set.insert(key(3), node_a.send().unwrap());
 
         // We create our new state on node b's side.
         let mut node_b_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_b_set.insert(1, node_b.send().unwrap());
-        node_b_set.delete(3, node_b.send().unwrap());
+        node_b_set.insert(key(1), node_b.send().unwrap());
+        node_b_set.delete(key(3), node_b.send().unwrap());
 
         node_a_set.merge(node_b_set.clone());
 
-        node_a_set.insert(4, node_a.send().unwrap());
+        node_a_set.insert(key(4), node_a.send().unwrap());
 
         // We must observe another event from node b.
-        node_b_set.insert(4, node_b.send().unwrap());
+        node_b_set.insert(key(4), node_b.send().unwrap());
         node_a_set.merge(node_b_set.clone());
 
         node_a_set.purge_old_deletes();
@@ -776,19 +781,19 @@ mod tests {
         );
 
         assert!(
-            node_a_set.entries.get(&1).is_some(),
+            node_a_set.entries.get(&key(1)).is_some(),
             "Expected entry with key 1 to exist."
         );
         assert!(
-            node_a_set.entries.get(&2).is_some(),
+            node_a_set.entries.get(&key(2)).is_some(),
             "Expected entry with key 2 to exist."
         );
         assert!(
-            node_a_set.entries.get(&3).is_none(),
+            node_a_set.entries.get(&key(3)).is_none(),
             "Expected entry with key 3 to NOT exist."
         );
         assert!(
-            node_a_set.entries.get(&4).is_some(),
+            node_a_set.entries.get(&key(4)).is_some(),
             "Expected entry with key 4 to exist."
         );
     }
@@ -806,9 +811,9 @@ mod tests {
         let mut node_a_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
-        node_a_set.insert(3, node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
+        node_a_set.insert(key(3), node_a.send().unwrap());
 
         std::thread::sleep(Duration::from_millis(1));
 
@@ -816,18 +821,18 @@ mod tests {
         let mut node_b_set = OrSWotSet::<1>::default();
 
         // We add a new set of entries into our set.
-        node_b_set.insert(1, node_b.send().unwrap());
-        node_b_set.delete(3, node_b.send().unwrap());
+        node_b_set.insert(key(1), node_b.send().unwrap());
+        node_b_set.delete(key(3), node_b.send().unwrap());
 
         node_a_set.merge(node_b_set.clone());
 
-        node_a_set.insert(4, node_a.send().unwrap());
+        node_a_set.insert(key(4), node_a.send().unwrap());
 
         // Delete entry 2 from set a.
-        node_a_set.delete(2, node_a.send().unwrap());
+        node_a_set.delete(key(2), node_a.send().unwrap());
 
         // 'observe' a new op happening from node a.
-        node_a_set.insert(5, node_a.send().unwrap());
+        node_a_set.insert(key(5), node_a.send().unwrap());
 
         node_a_set.merge(node_b_set.clone());
 
@@ -838,54 +843,54 @@ mod tests {
         node_a_set.purge_old_deletes();
 
         assert!(
-            node_a_set.dead.get(&3).is_some(),
+            node_a_set.dead.get(&key(3)).is_some(),
             "SET A: Expected key 3 to be left in dead set."
         );
         assert!(
-            node_a_set.dead.get(&2).is_none(),
+            node_a_set.dead.get(&key(2)).is_none(),
             "SET A: Expected key 2 to be purged from dead set."
         );
 
         assert!(
-            node_a_set.entries.get(&1).is_some(),
+            node_a_set.entries.get(&key(1)).is_some(),
             "SET A: Expected entry with key 1 to exist."
         );
         assert!(
-            node_a_set.entries.get(&2).is_none(),
+            node_a_set.entries.get(&key(2)).is_none(),
             "SET A: Expected entry with key 2 to exist."
         );
         assert!(
-            node_a_set.entries.get(&3).is_none(),
+            node_a_set.entries.get(&key(3)).is_none(),
             "SET A: Expected entry with key 3 to NOT exist."
         );
         assert!(
-            node_a_set.entries.get(&4).is_some(),
+            node_a_set.entries.get(&key(4)).is_some(),
             "SET A: Expected entry with key 4 to exist."
         );
 
         assert!(
-            node_b_set.dead.get(&3).is_some(),
+            node_b_set.dead.get(&key(3)).is_some(),
             "SET B: Expected key 3 to be left in dead set."
         );
         assert!(
-            node_b_set.dead.get(&2).is_none(),
+            node_b_set.dead.get(&key(2)).is_none(),
             "SET B: Expected key 2 to be purged from dead set."
         );
 
         assert!(
-            node_b_set.entries.get(&1).is_some(),
+            node_b_set.entries.get(&key(1)).is_some(),
             "SET B: Expected entry with key 1 to exist."
         );
         assert!(
-            node_b_set.entries.get(&2).is_none(),
+            node_b_set.entries.get(&key(2)).is_none(),
             "SET B: Expected entry with key 2 to exist."
         );
         assert!(
-            node_b_set.entries.get(&3).is_none(),
+            node_b_set.entries.get(&key(3)).is_none(),
             "SET B: Expected entry with key 3 to NOT exist."
         );
         assert!(
-            node_b_set.entries.get(&4).is_some(),
+            node_b_set.entries.get(&key(4)).is_some(),
             "SET B: Expected entry with key 4 to exist."
         );
     }
@@ -898,10 +903,10 @@ mod tests {
         // We create our new set for node a.
         let mut node_a_set = OrSWotSet::<1>::default();
 
-        let did_add = node_a_set.insert(1, node_a.send().unwrap());
+        let did_add = node_a_set.insert(key(1), node_a.send().unwrap());
         assert!(did_add, "Expected entry insert to be added.");
 
-        let did_add = node_a_set.insert(1, old_ts);
+        let did_add = node_a_set.insert(key(1), old_ts);
         assert!(
             !did_add,
             "Expected entry insert with old timestamp to be ignored"
@@ -916,10 +921,10 @@ mod tests {
         // We create our new set for node a.
         let mut node_a_set = OrSWotSet::<1>::default();
 
-        let did_add = node_a_set.insert(1, node_a.send().unwrap());
+        let did_add = node_a_set.insert(key(1), node_a.send().unwrap());
         assert!(did_add, "Expected entry insert to be added.");
 
-        let did_add = node_a_set.delete(1, old_ts);
+        let did_add = node_a_set.delete(key(1), old_ts);
         assert!(
             !did_add,
             "Expected entry delete with old timestamp to be ignored"
@@ -939,12 +944,12 @@ mod tests {
         let mut node_b_set = OrSWotSet::<1>::default();
 
         let insert_ts_1 = node_a.send().unwrap();
-        node_a_set.insert(1, insert_ts_1);
+        node_a_set.insert(key(1), insert_ts_1);
 
         let (changed, removed) = OrSWotSet::<1>::default().diff(&node_a_set);
         assert_eq!(
             changed,
-            vec![(1, insert_ts_1)],
+            vec![(key(1), insert_ts_1)],
             "Expected set diff to contain key `1`."
         );
         assert!(
@@ -953,16 +958,16 @@ mod tests {
         );
 
         let delete_ts_3 = node_a.send().unwrap();
-        node_a_set.delete(3, delete_ts_3);
+        node_a_set.delete(key(3), delete_ts_3);
 
         let insert_ts_2 = node_b.send().unwrap();
-        node_b_set.insert(2, insert_ts_2);
+        node_b_set.insert(key(2), insert_ts_2);
 
         let (changed, removed) = node_a_set.diff(&node_b_set);
 
         assert_eq!(
             changed,
-            vec![(2, insert_ts_2)],
+            vec![(key(2), insert_ts_2)],
             "Expected set a to only be marked as missing key `2`"
         );
         assert!(
@@ -973,12 +978,12 @@ mod tests {
         let (changed, removed) = node_b_set.diff(&node_a_set);
         assert_eq!(
             changed,
-            vec![(1, insert_ts_1)],
+            vec![(key(1), insert_ts_1)],
             "Expected set b to have key `1` marked as changed."
         );
         assert_eq!(
             removed,
-            vec![(3, delete_ts_3)],
+            vec![(key(3), delete_ts_3)],
             "Expected set b to have key `3` marked as deleted."
         );
     }
@@ -996,25 +1001,25 @@ mod tests {
         let mut node_b_set = OrSWotSet::<1>::default();
 
         // This should get overriden by node b.
-        node_a_set.insert(1, node_a.send().unwrap());
-        node_a_set.insert(2, node_a.send().unwrap());
+        node_a_set.insert(key(1), node_a.send().unwrap());
+        node_a_set.insert(key(2), node_a.send().unwrap());
 
         std::thread::sleep(Duration::from_millis(500));
 
         let delete_ts_3 = node_a.send().unwrap();
-        node_a_set.delete(3, delete_ts_3);
+        node_a_set.delete(key(3), delete_ts_3);
 
         let insert_ts_2 = node_b.send().unwrap();
-        node_b_set.insert(2, insert_ts_2);
+        node_b_set.insert(key(2), insert_ts_2);
 
         let insert_ts_1 = node_b.send().unwrap();
-        node_b_set.insert(1, insert_ts_1);
+        node_b_set.insert(key(1), insert_ts_1);
 
         let (changed, removed) = node_a_set.diff(&node_b_set);
 
         assert_eq!(
             changed,
-            vec![(1, insert_ts_1), (2, insert_ts_2)],
+            vec![(key(1), insert_ts_1), (key(2), insert_ts_2)],
             "Expected set a to be marked as updating keys `1, 2`"
         );
         assert!(
@@ -1030,7 +1035,7 @@ mod tests {
         );
         assert_eq!(
             removed,
-            vec![(3, delete_ts_3)],
+            vec![(key(3), delete_ts_3)],
             "Expected set b to have key `3` marked as deleted."
         );
     }
@@ -1045,12 +1050,12 @@ mod tests {
 
         // This delete conflicts with the insert timestamp.
         // We expect node with the biggest ID to win.
-        node_a_set.insert(1, node_a);
-        node_b_set.delete(1, node_b);
+        node_a_set.insert(key(1), node_a);
+        node_b_set.delete(key(1), node_b);
 
         let (changed, removed) = node_a_set.diff(&node_b_set);
         assert_eq!(changed, vec![]);
-        assert_eq!(removed, vec![(1, node_b)]);
+        assert_eq!(removed, vec![(key(1), node_b)]);
 
         let (changed, removed) = node_b_set.diff(&node_a_set);
         assert_eq!(changed, vec![]);
@@ -1060,10 +1065,10 @@ mod tests {
         node_b_set.merge(node_a_set.clone());
 
         assert!(
-            node_a_set.get(&1).is_none(),
+            node_a_set.get(&key(1)).is_none(),
             "Set a should no longer have key 1."
         );
-        assert!(node_b_set.get(&1).is_none(), "Set b should not have key 1.");
+        assert!(node_b_set.get(&key(1)).is_none(), "Set b should not have key 1.");
 
         let (changed, removed) = node_b_set.diff(&node_a_set);
         assert_eq!(changed, vec![]);
@@ -1073,19 +1078,19 @@ mod tests {
         assert_eq!(changed, vec![]);
         assert_eq!(removed, vec![]);
 
-        let has_changed = node_a_set.insert(1, node_a);
+        let has_changed = node_a_set.insert(key(1), node_a);
         assert!(!has_changed, "Set a should not insert the value.");
-        let has_changed = node_b_set.insert(1, node_a);
+        let has_changed = node_b_set.insert(key(1), node_a);
         assert!(
             !has_changed,
             "Set b should not insert the value with node a's timestamp."
         );
-        let has_changed = node_a_set.insert(1, node_b);
+        let has_changed = node_a_set.insert(key(1), node_b);
         assert!(
             has_changed,
             "Set a should insert the value with node b's timestamp."
         );
-        let has_changed = node_b_set.insert(1, node_b);
+        let has_changed = node_b_set.insert(key(1), node_b);
         assert!(has_changed, "Set b should insert the value.");
 
         let mut node_a_set = OrSWotSet::<1>::default();
@@ -1093,11 +1098,11 @@ mod tests {
 
         // This delete conflicts with the insert timestamp.
         // We expect node with the biggest ID to win.
-        node_a_set.delete(1, node_a);
-        node_b_set.insert(1, node_b);
+        node_a_set.delete(key(1), node_a);
+        node_b_set.insert(key(1), node_b);
 
         let (changed, removed) = node_a_set.diff(&node_b_set);
-        assert_eq!(changed, vec![(1, node_b)]);
+        assert_eq!(changed, vec![(key(1), node_b)]);
         assert_eq!(removed, vec![]);
 
         let (changed, removed) = node_b_set.diff(&node_a_set);
@@ -1108,10 +1113,10 @@ mod tests {
         node_b_set.merge(node_a_set.clone());
 
         assert!(
-            node_a_set.get(&1).is_some(),
+            node_a_set.get(&key(1)).is_some(),
             "Set a should no longer have key 1."
         );
-        assert!(node_b_set.get(&1).is_some(), "Set b should not have key 1.");
+        assert!(node_b_set.get(&key(1)).is_some(), "Set b should not have key 1.");
     }
 
     #[test]
@@ -1120,12 +1125,12 @@ mod tests {
         let mut node_set = OrSWotSet::<1>::default();
 
         // A basic example of the purging system.
-        node_set.insert_with_source(0, 1, clock.send().unwrap());
+        node_set.insert_with_source(0, key(1), clock.send().unwrap());
 
-        node_set.delete_with_source(0, 1, clock.send().unwrap());
+        node_set.delete_with_source(0, key(1), clock.send().unwrap());
 
-        node_set.insert_with_source(0, 3, clock.send().unwrap());
-        node_set.insert_with_source(0, 4, clock.send().unwrap());
+        node_set.insert_with_source(0, key(3), clock.send().unwrap());
+        node_set.insert_with_source(0, key(4), clock.send().unwrap());
 
         // Since we're only using one source here, we should be able to safely purge key `1`.
         let purged = node_set
@@ -1133,20 +1138,20 @@ mod tests {
             .into_iter()
             .map(|(key, _)| key)
             .collect::<Vec<_>>();
-        assert_eq!(purged, vec![1]);
+        assert_eq!(purged, vec![key(1)]);
 
         let mut node_set = OrSWotSet::<2>::default();
 
         // Insert a new entry from source `1` and `0`.
-        node_set.insert_with_source(0, 1, clock.send().unwrap());
-        node_set.insert_with_source(1, 2, clock.send().unwrap());
+        node_set.insert_with_source(0, key(1), clock.send().unwrap());
+        node_set.insert_with_source(1, key(2), clock.send().unwrap());
 
         // Delete an entry from the set. (Mark it as a tombstone.)
-        node_set.delete_with_source(0, 1, clock.send().unwrap());
+        node_set.delete_with_source(0, key(1), clock.send().unwrap());
 
         // Effectively 'observe' a new set of changes.
-        node_set.insert_with_source(0, 3, clock.send().unwrap());
-        node_set.insert_with_source(0, 4, clock.send().unwrap());
+        node_set.insert_with_source(0, key(3), clock.send().unwrap());
+        node_set.insert_with_source(0, key(4), clock.send().unwrap());
 
         // No keys should be purged, because source `1` has not changed it's last
         // observed timestamp, which means the system cannot guarantee that it is safe
@@ -1155,7 +1160,7 @@ mod tests {
         assert!(purged.is_empty());
 
         // Our other source has also now observed a new timestamp.
-        node_set.insert_with_source(1, 3, clock.send().unwrap());
+        node_set.insert_with_source(1, key(3), clock.send().unwrap());
 
         // We should now have successfully removed the key.
         let purged = node_set
@@ -1163,24 +1168,24 @@ mod tests {
             .into_iter()
             .map(|(key, _)| key)
             .collect::<Vec<_>>();
-        assert_eq!(purged, vec![1]);
+        assert_eq!(purged, vec![key(1)]);
 
         let old_ts = clock.send().unwrap();
         let initial_ts = clock.send().unwrap();
 
         // Deletes from one source shouldn't affect deletes from the other.
-        assert!(node_set.delete_with_source(0, 4, initial_ts));
-        assert!(node_set.delete_with_source(1, 3, old_ts));
-        assert!(!node_set.delete_with_source(0, 3, old_ts));
+        assert!(node_set.delete_with_source(0, key(4), initial_ts));
+        assert!(node_set.delete_with_source(1, key(3), old_ts));
+        assert!(!node_set.delete_with_source(0, key(3), old_ts));
 
-        assert!(node_set.insert_with_source(0, 5, initial_ts));
-        assert!(node_set.insert_with_source(1, 6, old_ts));
-        assert!(!node_set.insert_with_source(0, 5, old_ts));
+        assert!(node_set.insert_with_source(0, key(5), initial_ts));
+        assert!(node_set.insert_with_source(1, key(6), old_ts));
+        assert!(!node_set.insert_with_source(0, key(5), old_ts));
 
-        assert!(node_set.insert_with_source(0, 6, initial_ts));
-        assert!(node_set.delete_with_source(1, 4, clock.send().unwrap()));
-        assert!(node_set.delete_with_source(0, 3, clock.send().unwrap()));
-        assert!(!node_set.delete_with_source(1, 4, initial_ts));
+        assert!(node_set.insert_with_source(0, key(6), initial_ts));
+        assert!(node_set.delete_with_source(1, key(4), clock.send().unwrap()));
+        assert!(node_set.delete_with_source(0, key(3), clock.send().unwrap()));
+        assert!(!node_set.delete_with_source(1, key(4), initial_ts));
     }
 
     #[test]
@@ -1188,12 +1193,12 @@ mod tests {
         let ts = Duration::from_secs(1);
         let mut node_set = OrSWotSet::<1>::default();
 
-        assert!(node_set.will_apply(1, HLCTimestamp::new(ts, 0, 0)));
-        node_set.insert(1, HLCTimestamp::new(ts, 0, 0));
-        assert!(!node_set.will_apply(1, HLCTimestamp::new(ts, 0, 0)));
+        assert!(node_set.will_apply(key(1), HLCTimestamp::new(ts, 0, 0)));
+        node_set.insert(key(1), HLCTimestamp::new(ts, 0, 0));
+        assert!(!node_set.will_apply(key(1), HLCTimestamp::new(ts, 0, 0)));
 
-        assert!(node_set.will_apply(3, HLCTimestamp::new(Duration::from_secs(3), 0, 0)));
-        node_set.delete(3, HLCTimestamp::new(Duration::from_secs(5), 0, 0));
-        assert!(!node_set.will_apply(3, HLCTimestamp::new(Duration::from_secs(4), 0, 0)));
+        assert!(node_set.will_apply(key(3), HLCTimestamp::new(Duration::from_secs(3), 0, 0)));
+        node_set.delete(key(3), HLCTimestamp::new(Duration::from_secs(5), 0, 0));
+        assert!(!node_set.will_apply(key(3), HLCTimestamp::new(Duration::from_secs(4), 0, 0)));
     }
 }

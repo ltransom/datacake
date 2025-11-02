@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 pub(crate) type DocVec<T> = SmallVec<[T; 4]>;
 
 #[repr(C)]
-#[derive(Serialize, Deserialize, Archive, Copy, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Archive, Clone, Debug, PartialEq)]
 #[archive(check_bytes)]
 #[archive_attr(repr(C))]
 /// The metadata attached to each document.
@@ -62,8 +62,8 @@ impl Document {
 
     #[inline]
     /// The unique id of the document.
-    pub fn id(&self) -> Key {
-        self.metadata.id
+    pub fn id(&self) -> &[u8] {
+        &self.metadata.id
     }
 
     #[inline]

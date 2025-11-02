@@ -24,6 +24,11 @@
 //!
 //! static KEYSPACE: &str = "sqlite-store";
 //!
+//! // Helper function to convert u64 to Vec<u8> for keys
+//! fn key(n: u64) -> Vec<u8> {
+//!     n.to_le_bytes().to_vec()
+//! }
+//!
 //! #[tokio::test]
 //! async fn test_basic_sqlite_cluster() -> Result<()> {
 //!     let _ = tracing_subscriber::fmt::try_init();
@@ -43,30 +48,30 @@
 //!     let handle = store.handle();
 //!
 //!     handle
-//!         .put(KEYSPACE, 1, b"Hello, world".to_vec(), Consistency::All)
+//!         .put(KEYSPACE, key(1), b"Hello, world".to_vec(), Consistency::All)
 //!         .await
 //!         .expect("Put value.");
 //!
 //!     let doc = handle
-//!         .get(KEYSPACE, 1)
+//!         .get(KEYSPACE, key(1))
 //!         .await
 //!         .expect("Get value.")
 //!         .expect("Document should not be none");
-//!     assert_eq!(doc.id(), 1);
+//!     assert_eq!(doc.id(), &key(1));
 //!     assert_eq!(doc.data(), b"Hello, world");
 //!
 //!     handle
-//!         .del(KEYSPACE, 1, Consistency::All)
+//!         .del(KEYSPACE, key(1), Consistency::All)
 //!         .await
 //!         .expect("Del value.");
-//!     let doc = handle.get(KEYSPACE, 1).await.expect("Get value.");
+//!     let doc = handle.get(KEYSPACE, key(1)).await.expect("Get value.");
 //!     assert!(doc.is_none(), "No document should not exist!");
 //!
 //!     handle
-//!         .del(KEYSPACE, 2, Consistency::All)
+//!         .del(KEYSPACE, key(2), Consistency::All)
 //!         .await
 //!         .expect("Del value which doesnt exist locally.");
-//!     let doc = handle.get(KEYSPACE, 2).await.expect("Get value.");
+//!     let doc = handle.get(KEYSPACE, key(2)).await.expect("Get value.");
 //!     assert!(doc.is_none(), "No document should not exist!");
 //!
 //!     node.shutdown().await;
@@ -194,7 +199,7 @@ impl Storage for SqliteStorage {
         keys: impl Iterator<Item = Key> + Send,
     ) -> Result<(), BulkMutationError<Self::Error>> {
         let params = keys
-            .map(|doc_id| (keyspace.to_string(), doc_id as i64))
+            .map(|doc_id| (keyspace.to_string(), doc_id))
             .collect::<Vec<_>>();
         self.inner
             .execute_many(queries::DELETE_TOMBSTONE, params)
@@ -209,7 +214,7 @@ impl Storage for SqliteStorage {
                 queries::INSERT,
                 (
                     keyspace.to_string(),
-                    doc.id() as i64,
+                    doc.id().to_vec(),
                     doc.last_updated().to_string(),
                     doc.data().to_vec(),
                 ),
@@ -227,7 +232,7 @@ impl Storage for SqliteStorage {
             .map(|doc| {
                 (
                     keyspace.to_string(),
-                    doc.id() as i64,
+                    doc.id().to_vec(),
                     doc.last_updated().to_string(),
                     doc.data().to_vec(),
                 )
@@ -249,7 +254,7 @@ impl Storage for SqliteStorage {
         self.inner
             .execute(
                 queries::SET_TOMBSTONE,
-                (keyspace.to_string(), doc_id as i64, timestamp.to_string()),
+                (keyspace.to_string(), doc_id, timestamp.to_string()),
             )
             .await?;
         Ok(())
@@ -264,7 +269,7 @@ impl Storage for SqliteStorage {
             .map(|doc| {
                 (
                     keyspace.to_string(),
-                    doc.id as i64,
+                    doc.id,
                     doc.last_updated.to_string(),
                 )
             })
@@ -285,7 +290,7 @@ impl Storage for SqliteStorage {
             .inner
             .fetch_one::<_, models::Doc>(
                 queries::SELECT_DOC,
-                (keyspace.to_string(), doc_id as i64),
+                (keyspace.to_string(), doc_id),
             )
             .await?;
 
@@ -346,7 +351,7 @@ mod models {
     pub struct Doc(pub Document);
     impl FromRow for Doc {
         fn from_row(row: &Row) -> rusqlite::Result<Self> {
-            let id = row.get::<_, i64>(0)? as Key;
+            let id = row.get::<_, Vec<u8>>(0)?;
             let ts = row.get::<_, String>(1)?;
             let data = row.get::<_, Vec<u8>>(2)?;
 
@@ -360,7 +365,7 @@ mod models {
     pub struct Metadata(pub Key, pub HLCTimestamp, pub bool);
     impl FromRow for Metadata {
         fn from_row(row: &Row) -> rusqlite::Result<Self> {
-            let id = row.get::<_, i64>(0)? as Key;
+            let id = row.get::<_, Vec<u8>>(0)?;
             let ts = row.get::<_, String>(1)?;
             let is_tombstone = row.get::<_, bool>(2)?;
 
@@ -376,7 +381,7 @@ async fn setup_db(handle: StorageHandle) -> rusqlite::Result<()> {
     let table = r#"
         CREATE TABLE IF NOT EXISTS state_entries (
             keyspace TEXT,
-            doc_id BIGINT,
+            doc_id BLOB,
             ts TEXT,
             data BLOB,
             PRIMARY KEY (keyspace, doc_id)

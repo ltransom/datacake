@@ -112,8 +112,9 @@ async fn get_value(
         "Getting document!"
     );
 
+    let key_bytes = params.key.to_le_bytes().to_vec();
     let doc = handle
-        .get(&params.keyspace, params.key)
+        .get(&params.keyspace, key_bytes)
         .await
         .map_err(|e| {
             error!(error = ?e, doc_id = params.key, "Failed to fetch doc.");
@@ -137,8 +138,9 @@ async fn set_value(
         "Storing document!"
     );
 
+    let key_bytes = params.key.to_le_bytes().to_vec();
     handle
-        .put(&params.keyspace, params.key, data, Consistency::EachQuorum)
+        .put(&params.keyspace, key_bytes, data, Consistency::EachQuorum)
         .await
         .map_err(|e| {
             error!(error = ?e, doc_id = params.key, "Failed to fetch doc.");

@@ -69,7 +69,7 @@ async fn insert_n_docs(
         handle
             .put(
                 "my-keyspace",
-                id,
+                id.to_le_bytes().to_vec(),
                 b"Hello, world! From keyspace 1.".to_vec(),
                 consistency,
             )
@@ -84,7 +84,7 @@ async fn remove_n_docs(
     consistency: Consistency,
 ) -> Result<()> {
     for id in range {
-        handle.del("my-keyspace", id, consistency).await?;
+        handle.del("my-keyspace", id.to_le_bytes().to_vec(), consistency).await?;
     }
     Ok(())
 }

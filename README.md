@@ -58,13 +58,16 @@ async fn main() -> anyhow::Result<()> {
         .add_extension(EventuallyConsistentStoreExtension::new(MemStore::default()))
         .await
         .expect("Create store.");
-    
+
     let handle = store.handle();
+
+    // Helper to convert u64 to Vec<u8> key
+    let key = |n: u64| n.to_le_bytes().to_vec();
 
     handle
         .put(
             "my-keyspace",
-            1,
+            key(1),
             b"Hello, world! From keyspace 1.".to_vec(),
             Consistency::All,
         )
@@ -74,6 +77,28 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 ```
+
+#### Type-Safe Keyspaces
+Datacake supports type-safe keyspaces where each keyspace can use a different key type. This provides compile-time safety and better ergonomics:
+
+```rust
+use datacake::eventual_consistency::TypedKeyspaceHandle;
+
+// Create type-safe handles for different keyspaces
+let users: TypedKeyspaceHandle<String, _> = store.typed_handle("users")?;
+let counters: TypedKeyspaceHandle<u64, _> = store.typed_handle("counters")?;
+
+// Use String keys directly - no manual conversion needed!
+users.put("user_123".to_string(), b"Alice".to_vec(), Consistency::All).await?;
+
+// Use u64 keys directly
+counters.put(42, b"count_data".to_vec(), Consistency::All).await?;
+
+// Type safety: This would fail at runtime if you try to mix types
+// let fail = store.typed_handle::<u64>("users")?; // Error: type mismatch!
+```
+
+Supported key types include `u64`, `String`, `Vec<u8>`, `uuid::Uuid` (with `uuid` feature), and composite types like `(String, String)`.
 
 ### Why does Datacake exist?
 

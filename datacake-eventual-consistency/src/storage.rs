@@ -354,6 +354,11 @@ pub mod test_suite {
     use crate::storage::Storage;
     use crate::{BulkMutationError, DocumentMetadata, PutContext};
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     /// A wrapping type around another `Storage` implementation that
     /// logs all the activity going into and out of the store.
     ///
@@ -443,7 +448,7 @@ pub mod test_suite {
             doc_id: Key,
             timestamp: HLCTimestamp,
         ) -> Result<(), Self::Error> {
-            info!(keyspace = keyspace, doc_id = doc_id, timestamp = %timestamp, "mark_as_tombstone");
+            info!(keyspace = keyspace, doc_id = ?doc_id, timestamp = %timestamp, "mark_as_tombstone");
             self.0.mark_as_tombstone(keyspace, doc_id, timestamp).await
         }
 
@@ -464,7 +469,7 @@ pub mod test_suite {
             keyspace: &str,
             doc_id: Key,
         ) -> Result<Option<Document>, Self::Error> {
-            info!(keyspace = keyspace, doc_id = doc_id, "get");
+            info!(keyspace = keyspace, doc_id = ?doc_id, "get");
             self.0.get(keyspace, doc_id).await
         }
 
@@ -526,7 +531,7 @@ pub mod test_suite {
             .collect::<HashSet<(Key, HLCTimestamp, bool)>>();
         assert_eq!(metadata, to_hashset([]), "New keyspace should be empty.");
 
-        let doc = Document::new(1, clock.send().unwrap(), Vec::new());
+        let doc = Document::new(key(1), clock.send().unwrap(), Vec::new());
         let res = storage.put_with_ctx(KEYSPACE, doc, None).await;
         assert!(
             res.is_ok(),
@@ -534,7 +539,7 @@ pub mod test_suite {
             res
         );
 
-        let doc = Document::new(2, clock.send().unwrap(), Vec::new());
+        let doc = Document::new(key(2), clock.send().unwrap(), Vec::new());
         let res = storage.put_with_ctx(KEYSPACE, doc, None).await;
         assert!(
             res.is_ok(),
@@ -580,9 +585,9 @@ pub mod test_suite {
 
         static KEYSPACE: &str = "metadata-test-keyspace";
 
-        let mut doc_1 = Document::new(1, clock.send().unwrap(), Vec::new());
-        let mut doc_2 = Document::new(2, clock.send().unwrap(), Vec::new());
-        let mut doc_3 = Document::new(3, clock.send().unwrap(), Vec::new());
+        let mut doc_1 = Document::new(key(1), clock.send().unwrap(), Vec::new());
+        let mut doc_2 = Document::new(key(2), clock.send().unwrap(), Vec::new());
+        let mut doc_3 = Document::new(key(3), clock.send().unwrap(), Vec::new());
         storage
             .multi_put(
                 KEYSPACE,
@@ -593,7 +598,7 @@ pub mod test_suite {
 
         doc_3.metadata.last_updated = clock.send().unwrap();
         storage
-            .mark_as_tombstone(KEYSPACE, doc_3.id(), doc_3.last_updated())
+            .mark_as_tombstone(KEYSPACE, doc_3.id().to_vec(), doc_3.last_updated())
             .await
             .expect("Mark document as tombstone.");
 
@@ -605,9 +610,9 @@ pub mod test_suite {
         assert_eq!(
             metadata,
             to_hashset([
-                (doc_1.id(), doc_1.last_updated(), false),
-                (doc_2.id(), doc_2.last_updated(), false),
-                (doc_3.id(), doc_3.last_updated(), true),
+                (doc_1.id().to_vec(), doc_1.last_updated(), false),
+                (doc_2.id().to_vec(), doc_2.last_updated(), false),
+                (doc_3.id().to_vec(), doc_3.last_updated(), true),
             ]),
             "Persisted metadata entries should match expected values."
         );
@@ -617,7 +622,7 @@ pub mod test_suite {
         storage
             .mark_many_as_tombstone(
                 KEYSPACE,
-                [doc_1.metadata, doc_2.metadata].into_iter(),
+                [doc_1.metadata.clone(), doc_2.metadata.clone()].into_iter(),
             )
             .await
             .expect("Mark documents as tombstones.");
@@ -629,15 +634,15 @@ pub mod test_suite {
         assert_eq!(
             metadata,
             to_hashset([
-                (doc_1.id(), doc_1.last_updated(), true),
-                (doc_2.id(), doc_2.last_updated(), true),
-                (doc_3.id(), doc_3.last_updated(), true),
+                (doc_1.id().to_vec(), doc_1.last_updated(), true),
+                (doc_2.id().to_vec(), doc_2.last_updated(), true),
+                (doc_3.id().to_vec(), doc_3.last_updated(), true),
             ]),
             "Persisted metadata entries should match expected values."
         );
 
         storage
-            .remove_tombstones(KEYSPACE, [1, 2].into_iter())
+            .remove_tombstones(KEYSPACE, [key(1), key(2)].into_iter())
             .await
             .expect("Remove tombstone entries.");
         let metadata = storage
@@ -647,7 +652,7 @@ pub mod test_suite {
             .collect::<HashSet<(Key, HLCTimestamp, bool)>>();
         assert_eq!(
             metadata,
-            to_hashset([(doc_3.id(), doc_3.last_updated(), true)]),
+            to_hashset([(doc_3.id().to_vec(), doc_3.last_updated(), true)]),
             "Persisted metadata entries should match expected values after removal."
         );
 
@@ -669,9 +674,9 @@ pub mod test_suite {
         assert_eq!(
             metadata,
             to_hashset([
-                (doc_1.id(), doc_1.last_updated(), false),
-                (doc_2.id(), doc_2.last_updated(), false),
-                (doc_3.id(), doc_3.last_updated(), false),
+                (doc_1.id().to_vec(), doc_1.last_updated(), false),
+                (doc_2.id().to_vec(), doc_2.last_updated(), false),
+                (doc_3.id().to_vec(), doc_3.last_updated(), false),
             ]),
             "Persisted metadata entries should match expected values after update."
         );
@@ -682,12 +687,12 @@ pub mod test_suite {
         storage
             .mark_many_as_tombstone(
                 KEYSPACE,
-                [doc_1.metadata, doc_2.metadata, doc_3.metadata].into_iter(),
+                [doc_1.metadata.clone(), doc_2.metadata.clone(), doc_3.metadata.clone()].into_iter(),
             )
             .await
             .expect("Mark documents as tombstones.");
         let res = storage
-            .remove_tombstones(KEYSPACE, [1, 2, 3].into_iter())
+            .remove_tombstones(KEYSPACE, [key(1), key(2), key(3)].into_iter())
             .await;
         assert!(
             res.is_ok(),
@@ -713,10 +718,10 @@ pub mod test_suite {
             .mark_many_as_tombstone(
                 KEYSPACE,
                 [
-                    doc_1.metadata,
-                    doc_2.metadata,
-                    doc_3.metadata,
-                    DocumentMetadata::new(4, doc_4_ts),
+                    doc_1.metadata.clone(),
+                    doc_2.metadata.clone(),
+                    doc_3.metadata.clone(),
+                    DocumentMetadata::new(key(4), doc_4_ts),
                 ]
                 .into_iter(),
             )
@@ -730,10 +735,10 @@ pub mod test_suite {
         assert_eq!(
             metadata,
             to_hashset([
-                (doc_1.id(), doc_1.last_updated(), true),
-                (doc_2.id(), doc_2.last_updated(), true),
-                (doc_3.id(), doc_3.last_updated(), true),
-                (4, doc_4_ts, true),
+                (doc_1.id().to_vec(), doc_1.last_updated(), true),
+                (doc_2.id().to_vec(), doc_2.last_updated(), true),
+                (doc_3.id().to_vec(), doc_3.last_updated(), true),
+                (key(4), doc_4_ts, true),
             ]),
             "Persisted tombstones should be tracked."
         );
@@ -748,7 +753,7 @@ pub mod test_suite {
 
         static KEYSPACE: &str = "persistence-test-keyspace";
 
-        let res = storage.get(KEYSPACE, 1).await;
+        let res = storage.get(KEYSPACE, key(1)).await;
         assert!(
             res.is_ok(),
             "Expected successful get request. Got: {:?}",
@@ -761,22 +766,22 @@ pub mod test_suite {
 
         #[allow(clippy::needless_collect)]
         let res = storage
-            .multi_get(KEYSPACE, [1, 2, 3].into_iter())
+            .multi_get(KEYSPACE, [key(1), key(2), key(3)].into_iter())
             .await
             .expect("Expected successful get request.")
             .collect::<Vec<_>>();
         assert!(res.is_empty(), "Expected no document to be returned.");
 
         let mut doc_1 =
-            Document::new(1, clock.send().unwrap(), b"Hello, world!".to_vec());
-        let mut doc_2 = Document::new(2, clock.send().unwrap(), Vec::new());
+            Document::new(key(1), clock.send().unwrap(), b"Hello, world!".to_vec());
+        let mut doc_2 = Document::new(key(2), clock.send().unwrap(), Vec::new());
         let mut doc_3 = Document::new(
-            3,
+            key(3),
             clock.send().unwrap(),
             b"Hello, from document 3!".to_vec(),
         );
         let doc_3_updated = Document::new(
-            3,
+            key(3),
             clock.send().unwrap(),
             b"Hello, from document 3 With an update!".to_vec(),
         );
@@ -785,7 +790,7 @@ pub mod test_suite {
             .put_with_ctx(KEYSPACE, doc_1.clone(), None)
             .await
             .expect("Put document in persistent store.");
-        let res = storage.get(KEYSPACE, 1).await;
+        let res = storage.get(KEYSPACE, key(1)).await;
         assert!(
             res.is_ok(),
             "Expected successful get request. Got: {:?}",
@@ -801,7 +806,7 @@ pub mod test_suite {
             .await
             .expect("Put document in persistent store.");
         let res = storage
-            .multi_get(KEYSPACE, [1, 2, 3].into_iter())
+            .multi_get(KEYSPACE, [key(1), key(2), key(3)].into_iter())
             .await
             .expect("Expected successful get request.")
             .collect::<HashSet<_>>();
@@ -816,7 +821,7 @@ pub mod test_suite {
             .await
             .expect("Put updated document in persistent store.");
         let res = storage
-            .get(KEYSPACE, 3)
+            .get(KEYSPACE, key(3))
             .await
             .expect("Get updated document.");
         let doc = res.expect("Expected document to be returned after updating doc.");
@@ -824,10 +829,10 @@ pub mod test_suite {
 
         doc_2.metadata.last_updated = clock.send().unwrap();
         storage
-            .mark_as_tombstone(KEYSPACE, doc_2.id(), doc_2.last_updated())
+            .mark_as_tombstone(KEYSPACE, doc_2.id().to_vec(), doc_2.last_updated())
             .await
             .expect("Mark document as tombstone.");
-        let res = storage.get(KEYSPACE, 2).await;
+        let res = storage.get(KEYSPACE, key(2)).await;
         assert!(
             res.is_ok(),
             "Expected successful get request. Got: {:?}",
@@ -846,14 +851,14 @@ pub mod test_suite {
                 [
                     doc_1.metadata,
                     doc_2.metadata,
-                    DocumentMetadata::new(4, clock.send().unwrap()),
+                    DocumentMetadata::new(key(4), clock.send().unwrap()),
                 ]
                 .into_iter(),
             )
             .await
             .expect("Merk documents as tombstones");
         let res = storage
-            .multi_get(KEYSPACE, [1, 2, 3].into_iter())
+            .multi_get(KEYSPACE, [key(1), key(2), key(3)].into_iter())
             .await
             .expect("Expected successful get request.")
             .collect::<HashSet<_>>();
@@ -865,12 +870,12 @@ pub mod test_suite {
 
         doc_3.metadata.last_updated = clock.send().unwrap();
         storage
-            .mark_as_tombstone(KEYSPACE, doc_3.id(), doc_3.last_updated())
+            .mark_as_tombstone(KEYSPACE, doc_3.id().to_vec(), doc_3.last_updated())
             .await
             .expect("Delete documents from store.");
         #[allow(clippy::needless_collect)]
         let res = storage
-            .multi_get(KEYSPACE, [1, 2, 3].into_iter())
+            .multi_get(KEYSPACE, [key(1), key(2), key(3)].into_iter())
             .await
             .expect("Expected successful get request.")
             .collect::<Vec<_>>();

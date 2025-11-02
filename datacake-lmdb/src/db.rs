@@ -10,8 +10,8 @@ use heed::byteorder::LittleEndian;
 use heed::types::{Bytes as ByteSlice, Str, Unit, U64};
 use heed::{Database, Env, EnvOpenOptions};
 
-type KvDB = Database<U64<LittleEndian>, ByteSlice>;
-type MetaDB = Database<U64<LittleEndian>, U64<LittleEndian>>;
+type KvDB = Database<ByteSlice, ByteSlice>;
+type MetaDB = Database<ByteSlice, U64<LittleEndian>>;
 type KeyspaceDB = Database<Str, Unit>;
 type DatabaseKeyspace = BTreeMap<String, (KvDB, MetaDB)>;
 type Task = Box<dyn FnOnce(&Env, &KeyspaceDB, &mut DatabaseKeyspace) + Send + 'static>;
@@ -127,8 +127,8 @@ impl StorageHandle {
             for pair in meta.iter(&txn)? {
                 let (id, ts) = pair?;
 
-                let is_tombstone = kv.get(&txn, &id)?.is_none();
-                entries.push((id, HLCTimestamp::from_u64(ts), is_tombstone));
+                let is_tombstone = kv.get(&txn, id)?.is_none();
+                entries.push((id.to_vec(), HLCTimestamp::from_u64(ts), is_tombstone));
             }
 
             Ok(entries)
@@ -196,13 +196,13 @@ impl StorageHandle {
     pub(crate) async fn get(
         &self,
         keyspace: &str,
-        key: u64,
+        key: Key,
     ) -> heed::Result<Option<Document>> {
         self.submit_task(keyspace, move |env: &Env, kv: &KvDB, meta: &MetaDB| {
             let txn = env.read_txn()?;
             if let Some(doc) = kv.get(&txn, &key)? {
                 let ts = meta.get(&txn, &key)?.unwrap();
-                Ok(Some(Document::new(key, HLCTimestamp::from_u64(ts), doc)))
+                Ok(Some(Document::new(key, HLCTimestamp::from_u64(ts), doc.to_vec())))
             } else {
                 Ok(None)
             }
@@ -224,7 +224,7 @@ impl StorageHandle {
             for key in keys {
                 if let Some(doc) = kv.get(&txn, &key)? {
                     let ts = meta.get(&txn, &key)?.unwrap();
-                    docs.push(Document::new(key, HLCTimestamp::from_u64(ts), doc));
+                    docs.push(Document::new(key, HLCTimestamp::from_u64(ts), doc.to_vec()));
                 }
             }
 
@@ -358,6 +358,11 @@ mod tests {
 
     use super::*;
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     fn get_path() -> PathBuf {
         let path = temp_dir().join(Uuid::new_v4().to_string());
         std::fs::create_dir_all(&path).unwrap();
@@ -377,37 +382,37 @@ mod tests {
             .await
             .expect("Database should open OK.");
 
-        let doc1 = Document::new(1, HLCTimestamp::from_u64(0), b"Hello".as_ref());
+        let doc1 = Document::new(key(1), HLCTimestamp::from_u64(0), b"Hello".as_ref());
         handle
             .put_kv("test", doc1.clone())
             .await
             .expect("Put new doc");
 
         // Test keyspace dont overlap
-        let doc2 = Document::new(1, HLCTimestamp::from_u64(2), b"Hello 2".as_ref());
+        let doc2 = Document::new(key(1), HLCTimestamp::from_u64(2), b"Hello 2".as_ref());
         handle
             .put_kv("test2", doc2.clone())
             .await
             .expect("Put new doc");
 
-        let doc3 = Document::new(1, HLCTimestamp::from_u64(3), b"Hello 3".as_ref());
+        let doc3 = Document::new(key(1), HLCTimestamp::from_u64(3), b"Hello 3".as_ref());
         handle
             .put_kv("test3", doc3.clone())
             .await
             .expect("Put new doc");
 
         let fetched_doc_1 = handle
-            .get("test", 1)
+            .get("test", key(1))
             .await
             .expect("Get doc")
             .expect("Doc exists");
         let fetched_doc_2 = handle
-            .get("test2", 1)
+            .get("test2", key(1))
             .await
             .expect("Get doc")
             .expect("Doc exists");
         let fetched_doc_3 = handle
-            .get("test3", 1)
+            .get("test3", key(1))
             .await
             .expect("Get doc")
             .expect("Doc exists");
@@ -426,9 +431,9 @@ mod tests {
             .expect("Database should open OK.");
 
         let docs = vec![
-            Document::new(1, HLCTimestamp::from_u64(0), b"Hello".as_ref()),
-            Document::new(2, HLCTimestamp::from_u64(0), b"Hello".as_ref()),
-            Document::new(3, HLCTimestamp::from_u64(0), b"Hello".as_ref()),
+            Document::new(key(1), HLCTimestamp::from_u64(0), b"Hello".as_ref()),
+            Document::new(key(2), HLCTimestamp::from_u64(0), b"Hello".as_ref()),
+            Document::new(key(3), HLCTimestamp::from_u64(0), b"Hello".as_ref()),
         ];
         handle
             .put_many_kv("test", docs.clone().into_iter())
@@ -436,7 +441,7 @@ mod tests {
             .expect("Put new docs");
 
         let fetched_docs = handle
-            .get_many("test", [1, 2, 3].into_iter())
+            .get_many("test", [key(1), key(2), key(3)].into_iter())
             .await
             .expect("Get docs");
 
@@ -449,23 +454,23 @@ mod tests {
             .await
             .expect("Database should open OK.");
 
-        let doc1 = Document::new(1, HLCTimestamp::from_u64(0), b"Hello".as_ref());
+        let doc1 = Document::new(key(1), HLCTimestamp::from_u64(0), b"Hello".as_ref());
         handle
             .put_kv("test", doc1.clone())
             .await
             .expect("Put new doc");
         assert!(
-            handle.get("test", 1).await.expect("Get doc").is_some(),
+            handle.get("test", key(1)).await.expect("Get doc").is_some(),
             "Document should exist"
         );
 
         // Mark it as a tombstone so we shouldn't get it returned anymore.
         handle
-            .mark_tombstone("test", doc1.id(), HLCTimestamp::from_u64(1))
+            .mark_tombstone("test", doc1.id().to_vec(), HLCTimestamp::from_u64(1))
             .await
             .expect("Put new doc");
         assert!(
-            handle.get("test", 1).await.expect("Get doc").is_none(),
+            handle.get("test", key(1)).await.expect("Get doc").is_none(),
             "Document should not exist"
         );
 
@@ -475,7 +480,7 @@ mod tests {
             .await
             .expect("Put new doc");
         assert!(
-            handle.get("test", 1).await.expect("Get doc").is_some(),
+            handle.get("test", key(1)).await.expect("Get doc").is_some(),
             "Document should exist"
         );
     }

@@ -21,16 +21,16 @@
 //! let mut node_b_set = OrSWotSet::<1>::default();
 //!
 //! // Insert a new key with a new timestamp in set A.
-//! node_a_set.insert(1, node_a.send().unwrap());
+//! node_a_set.insert(vec![1], node_a.send().unwrap());
 //!
 //! // Insert a new entry in set B.
-//! node_b_set.insert(2, node_b.send().unwrap());
+//! node_b_set.insert(vec![2], node_b.send().unwrap());
 //!
 //! // Let some time pass for demonstration purposes.
 //! std::thread::sleep(Duration::from_millis(500));
 //!
 //! // Set A has key `1` removed.
-//! node_a_set.delete(1, node_a.send().unwrap());
+//! node_a_set.delete(vec![1], node_a.send().unwrap());
 //!
 //! // Merging set B with set A and vice versa.
 //! // Our sets are now aligned without conflicts.
@@ -38,8 +38,8 @@
 //! node_a_set.merge(node_b_set.clone());
 //!
 //! // Set A and B should both see that key `1` has been deleted.
-//! assert!(node_a_set.get(&1).is_none(), "Key should be correctly removed.");
-//! assert!(node_b_set.get(&1).is_none(), "Key should be correctly removed.");
+//! assert!(node_a_set.get(&vec![1]).is_none(), "Key should be correctly removed.");
+//! assert!(node_b_set.get(&vec![1]).is_none(), "Key should be correctly removed.");
 //! ```
 //!
 //! ### Inspirations
@@ -47,9 +47,11 @@
 //! - [Big(ger) Sets: Making CRDT Sets Scale in Riak by Russell Brown](https://www.youtube.com/watch?v=f20882ZSdkU)
 //! - ["CRDTs Illustrated" by Arnout Engelen](https://www.youtube.com/watch?v=9xFfOhasiOE)
 
+mod key;
 mod orswot;
 mod timestamp;
 
+pub use key::{DatacakeKey, KeyDeserializationError, MAX_KEY_SIZE};
 #[cfg(feature = "rkyv-support")]
 pub use orswot::BadState;
 pub use orswot::{Key, OrSWotSet, StateChanges};

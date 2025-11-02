@@ -453,7 +453,7 @@ where
 {
     let doc_id_chunks = modified
         .chunks(MAX_NUMBER_OF_DOCS_PER_FETCH)
-        .map(|entries| entries.iter().map(|doc| doc.id).collect::<Vec<_>>());
+        .map(|entries| entries.iter().map(|doc| doc.id.clone()).collect::<Vec<_>>());
 
     let total = Instant::now();
     let mut total_num_docs = 0;

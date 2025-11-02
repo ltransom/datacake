@@ -62,11 +62,11 @@ where
     /// If the document is not the newest the store has seen thus far, it is a no-op.
     async fn on_set(&mut self, msg: Set<S>) -> Result<(), S::Error> {
         // We have something newer.
-        if !self.state.will_apply(msg.doc.id(), msg.doc.last_updated()) {
+        if !self.state.will_apply(msg.doc.id().to_vec(), msg.doc.last_updated()) {
             return Ok(());
         }
 
-        let doc_id = msg.doc.id();
+        let doc_id = msg.doc.id().to_vec();
         let ts = msg.doc.last_updated();
 
         self.storage
@@ -93,9 +93,9 @@ where
         let docs = msg
             .docs
             .into_iter()
-            .filter(|doc| self.state.will_apply(doc.id(), doc.last_updated()))
+            .filter(|doc| self.state.will_apply(doc.id().to_vec(), doc.last_updated()))
             .map(|doc| {
-                valid_entries.push((doc.id(), doc.last_updated()));
+                valid_entries.push((doc.id().to_vec(), doc.last_updated()));
                 doc
             });
 
@@ -109,7 +109,7 @@ where
         self.inc_change_timestamp().await;
 
         if let Err(error) = res {
-            let successful_ids = HashSet::<_>::from_iter(error.successful_doc_ids());
+            let successful_ids = HashSet::<_>::from_iter(error.successful_doc_ids().iter().cloned());
             let successful_entries = valid_entries
                 .into_iter()
                 .filter(|entry| successful_ids.contains(&entry.0));
@@ -132,17 +132,20 @@ where
     /// If the document is not the newest the store has seen thus far, it is a no-op.
     async fn on_del(&mut self, msg: Del<S>) -> Result<(), S::Error> {
         // We have something newer.
-        if !self.state.will_apply(msg.doc.id, msg.doc.last_updated) {
+        if !self.state.will_apply(msg.doc.id.clone(), msg.doc.last_updated) {
             return Ok(());
         }
 
+        let doc_id = msg.doc.id.clone();
+        let ts = msg.doc.last_updated;
+
         self.storage
-            .mark_as_tombstone(&self.name, msg.doc.id, msg.doc.last_updated)
+            .mark_as_tombstone(&self.name, msg.doc.id, ts)
             .await?;
 
         // The change has gone through, let's apply our memory state.
         self.state
-            .delete_with_source(msg.source, msg.doc.id, msg.doc.last_updated);
+            .delete_with_source(msg.source, doc_id, ts);
         self.inc_change_timestamp().await;
         Ok(())
     }
@@ -161,9 +164,9 @@ where
         let docs = msg
             .docs
             .into_iter()
-            .filter(|doc| self.state.will_apply(doc.id, doc.last_updated))
+            .filter(|doc| self.state.will_apply(doc.id.clone(), doc.last_updated))
             .map(|doc| {
-                valid_entries.push((doc.id, doc.last_updated));
+                valid_entries.push((doc.id.clone(), doc.last_updated));
                 doc
             });
 
@@ -174,7 +177,7 @@ where
         self.inc_change_timestamp().await;
 
         if let Err(error) = res {
-            let successful_ids = HashSet::<_>::from_iter(error.successful_doc_ids());
+            let successful_ids = HashSet::<_>::from_iter(error.successful_doc_ids().iter().cloned());
             let successful_entries = valid_entries
                 .into_iter()
                 .filter(|entry| successful_ids.contains(&entry.0));
@@ -200,7 +203,7 @@ where
 
         let res = self
             .storage
-            .remove_tombstones(&self.name, changes.iter().map(|(key, _)| *key))
+            .remove_tombstones(&self.name, changes.iter().map(|(key, _)| key.clone()))
             .await;
 
         // The operation may have been partially successful. We should re-mark
@@ -272,6 +275,11 @@ mod tests {
         }};
     }
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     async fn make_actor(
         clock: Clock,
         storage: MockStorage,
@@ -290,9 +298,9 @@ mod tests {
     async fn test_on_set() {
         let clock = Clock::new(0);
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
 
         let docs = [doc_1.clone(), doc_2.clone(), doc_3.clone()];
 
@@ -341,9 +349,9 @@ mod tests {
         let clock = Clock::new(0);
 
         let old_ts = HLCTimestamp::new(lag!(3_700), 0, 0);
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, old_ts, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), old_ts, b"Hello, world 3".to_vec());
 
         let docs = [doc_1.clone(), doc_2.clone()];
 
@@ -395,9 +403,9 @@ mod tests {
     async fn test_on_multi_set() {
         let clock = Clock::new(0);
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
 
         let docs = [doc_1.clone(), doc_2.clone(), doc_3.clone()];
 
@@ -429,13 +437,13 @@ mod tests {
         let clock = Clock::new(0);
 
         let old_ts = HLCTimestamp::new(lag!(3_700), 0, 0);
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
-        let doc_4 = Document::new(4, old_ts, b"Hello, world 4".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_4 = Document::new(key(4), old_ts, b"Hello, world 4".to_vec());
 
-        let doc_3_metadata = doc_3.metadata;
-        let doc_1_metadata = doc_1.metadata;
+        let doc_3_metadata = doc_3.metadata.clone();
+        let doc_1_metadata = doc_1.metadata.clone();
 
         let docs = [doc_2.clone()];
 
@@ -492,10 +500,10 @@ mod tests {
         let clock = Clock::new(0);
 
         let old_ts = HLCTimestamp::new(lag!(3_700), 0, 0);
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
-        let doc_4 = Document::new(4, old_ts, b"Hello, world 4".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_4 = Document::new(key(4), old_ts, b"Hello, world 4".to_vec());
 
         let docs = [doc_4.clone(), doc_2.clone(), doc_1.clone(), doc_3.clone()];
 
@@ -528,21 +536,22 @@ mod tests {
             .await
             .expect("Put operation should be successful.");
 
-        assert!(keyspace.state.get(&doc_1.id()).is_some());
-        assert!(keyspace.state.get(&doc_2.id()).is_some());
-        assert!(keyspace.state.get(&doc_3.id()).is_some());
-        assert!(keyspace.state.get(&doc_4.id()).is_some());
+        assert!(keyspace.state.get(&doc_1.id().to_vec()).is_some());
+        assert!(keyspace.state.get(&doc_2.id().to_vec()).is_some());
+        assert!(keyspace.state.get(&doc_3.id().to_vec()).is_some());
+        assert!(keyspace.state.get(&doc_4.id().to_vec()).is_some());
     }
 
     #[tokio::test]
     async fn test_on_del() {
         let clock = Clock::new(0);
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
 
         let docs = [doc_1.clone(), doc_2.clone(), doc_3.clone()];
+        let doc_1_id = doc_1.metadata.id.clone();
 
         let delete_ts = clock.get_time().await;
         let mock_store = MockStorage::default()
@@ -555,7 +564,7 @@ mod tests {
             })
             .expect_mark_as_tombstone(1, move |keyspace, doc_id, ts| {
                 assert_eq!(keyspace, "my-keyspace");
-                assert_eq!(doc_id, doc_1.metadata.id);
+                assert_eq!(doc_id, doc_1_id);
                 assert_eq!(ts, delete_ts);
 
                 Ok(())
@@ -576,7 +585,7 @@ mod tests {
             .on_del(Del {
                 source: 0,
                 doc: DocumentMetadata {
-                    id: doc_1.id(),
+                    id: doc_1.id().to_vec(),
                     last_updated: delete_ts,
                 },
                 _marker: Default::default(),
@@ -589,11 +598,11 @@ mod tests {
     async fn test_on_multi_del() {
         let clock = Clock::new(0);
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
 
-        let doc_ids = [doc_1.id(), doc_2.id()];
+        let doc_ids = [doc_1.id().to_vec(), doc_2.id().to_vec()];
         let docs = [doc_1.clone(), doc_2.clone(), doc_3.clone()];
 
         let mock_store = MockStorage::default()
@@ -626,8 +635,8 @@ mod tests {
             .on_multi_del(MultiDel {
                 source: 0,
                 docs: smallvec![
-                    DocumentMetadata::new(doc_1.id(), clock.get_time().await),
-                    DocumentMetadata::new(doc_2.id(), clock.get_time().await),
+                    DocumentMetadata::new(doc_1.id().to_vec(), clock.get_time().await),
+                    DocumentMetadata::new(doc_2.id().to_vec(), clock.get_time().await),
                 ],
                 _marker: Default::default(),
             })
@@ -639,15 +648,15 @@ mod tests {
     async fn test_on_del_unordered_events() {
         let clock = Clock::new(0);
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
 
         let docs = [doc_1.clone(), doc_2.clone(), doc_3.clone()];
 
         let deletes_expected = smallvec![
-            DocumentMetadata::new(doc_3.id(), clock.get_time().await),
-            DocumentMetadata::new(doc_1.id(), clock.get_time().await),
+            DocumentMetadata::new(doc_3.id().to_vec(), clock.get_time().await),
+            DocumentMetadata::new(doc_1.id().to_vec(), clock.get_time().await),
         ];
 
         let deletes_expected_clone = deletes_expected.clone();
@@ -686,25 +695,25 @@ mod tests {
             .await
             .expect("Put operation should be successful.");
 
-        assert!(keyspace.state.get(&doc_2.id()).is_some());
-        assert!(!keyspace.state.delete(doc_1.id(), doc_1.last_updated()));
-        assert!(!keyspace.state.delete(doc_3.id(), doc_3.last_updated()));
+        assert!(keyspace.state.get(&doc_2.id().to_vec()).is_some());
+        assert!(!keyspace.state.delete(doc_1.id().to_vec(), doc_1.last_updated()));
+        assert!(!keyspace.state.delete(doc_3.id().to_vec(), doc_3.last_updated()));
 
         // Push the safe timestamp forwards.
         keyspace
             .state
-            .insert_with_source(1, 5, HLCTimestamp::new(drift!(3700), 0, 0));
+            .insert_with_source(1, key(5), HLCTimestamp::new(drift!(3700), 0, 0));
         keyspace
             .state
-            .insert_with_source(0, 2, HLCTimestamp::new(drift!(3700), 1, 0));
+            .insert_with_source(0, key(2), HLCTimestamp::new(drift!(3700), 1, 0));
 
         let mut changes = keyspace.state.purge_old_deletes();
         // Needed because it may not be ordered.
-        changes.sort_by_key(|change| Reverse(change.0));
+        changes.sort_by_key(|change| Reverse(change.0.clone()));
 
         let expected_deletes = deletes_expected
             .iter()
-            .map(|doc| (doc.id, doc.last_updated))
+            .map(|doc| (doc.id.clone(), doc.last_updated))
             .collect::<Vec<_>>();
         assert_eq!(changes, expected_deletes);
     }

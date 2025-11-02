@@ -304,6 +304,11 @@ mod tests {
     use super::*;
     use crate::test_utils::MemStore;
 
+    // Helper function to convert u64 to Vec<u8> for testing
+    fn key(n: u64) -> Vec<u8> {
+        n.to_le_bytes().to_vec()
+    }
+
     #[tokio::test]
     async fn test_consistency_put() {
         static KEYSPACE: &str = "put-keyspace";
@@ -312,7 +317,7 @@ mod tests {
         let storage = group.storage();
         let service = ConsistencyService::new(group.clone(), RpcNetwork::default());
 
-        let doc = Document::new(1, clock.get_time().await, b"Hello, world".to_vec());
+        let doc = Document::new(key(1), clock.get_time().await, b"Hello, world".to_vec());
         let put_req = Request::using_owned(PutPayload {
             keyspace: KEYSPACE.to_string(),
             document: doc.clone(),
@@ -327,7 +332,7 @@ mod tests {
             .expect("Put request should succeed.");
 
         let saved_doc = storage
-            .get(KEYSPACE, doc.id())
+            .get(KEYSPACE, doc.id().to_vec())
             .await
             .expect("Get new doc.")
             .expect("Doc should not be None");
@@ -338,7 +343,7 @@ mod tests {
             .await
             .expect("Iter metadata")
             .collect::<Vec<_>>();
-        assert_eq!(metadata, vec![(doc.id(), doc.last_updated(), false)]);
+        assert_eq!(metadata, vec![(doc.id().to_vec(), doc.last_updated(), false)]);
     }
 
     #[tokio::test]
@@ -349,9 +354,9 @@ mod tests {
         let storage = group.storage();
         let service = ConsistencyService::new(group.clone(), RpcNetwork::default());
 
-        let doc_1 = Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
-        let doc_2 = Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+        let doc_1 = Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
+        let doc_2 = Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
         let put_req = Request::using_owned(MultiPutPayload {
             keyspace: KEYSPACE.to_string(),
             ctx: None,
@@ -368,7 +373,7 @@ mod tests {
         let saved_docs = storage
             .multi_get(
                 KEYSPACE,
-                vec![doc_1.id(), doc_2.id(), doc_3.id()].into_iter(),
+                [doc_1.id().to_vec(), doc_2.id().to_vec(), doc_3.id().to_vec()].into_iter(),
             )
             .await
             .expect("Get new doc.")
@@ -387,9 +392,9 @@ mod tests {
         assert_eq!(
             metadata,
             HashSet::from_iter([
-                (doc_1.id(), doc_1.last_updated(), false),
-                (doc_2.id(), doc_2.last_updated(), false),
-                (doc_3.id(), doc_3.last_updated(), false),
+                (doc_1.id().to_vec(), doc_1.last_updated(), false),
+                (doc_2.id().to_vec(), doc_2.last_updated(), false),
+                (doc_3.id().to_vec(), doc_3.last_updated(), false),
             ])
         );
     }
@@ -403,7 +408,7 @@ mod tests {
         let service = ConsistencyService::new(group.clone(), RpcNetwork::default());
 
         let mut doc =
-            Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
+            Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
         add_docs(
             KEYSPACE,
             smallvec![doc.clone()],
@@ -413,7 +418,7 @@ mod tests {
         .await;
 
         let saved_doc = storage
-            .get(KEYSPACE, doc.id())
+            .get(KEYSPACE, doc.id().to_vec())
             .await
             .expect("Get new doc.")
             .expect("Doc should not be None");
@@ -422,7 +427,7 @@ mod tests {
         doc.metadata.last_updated = clock.get_time().await;
         let remove_req = Request::using_owned(RemovePayload {
             keyspace: KEYSPACE.to_string(),
-            document: doc.metadata,
+            document: doc.metadata.clone(),
             timestamp: clock.get_time().await,
         })
         .await;
@@ -432,7 +437,7 @@ mod tests {
             .await
             .expect("Remove document.");
 
-        let saved_doc = storage.get(KEYSPACE, doc.id()).await.expect("Get new doc.");
+        let saved_doc = storage.get(KEYSPACE, doc.id().to_vec()).await.expect("Get new doc.");
         assert!(saved_doc.is_none(), "Documents should no longer exist.");
 
         let metadata = storage
@@ -440,7 +445,7 @@ mod tests {
             .await
             .expect("Iter metadata")
             .collect::<Vec<_>>();
-        assert_eq!(metadata, vec![(doc.id(), doc.last_updated(), true)]);
+        assert_eq!(metadata, vec![(doc.id().to_vec(), doc.last_updated(), true)]);
     }
 
     #[tokio::test]
@@ -452,10 +457,10 @@ mod tests {
         let service = ConsistencyService::new(group.clone(), RpcNetwork::default());
 
         let mut doc_1 =
-            Document::new(1, clock.get_time().await, b"Hello, world 1".to_vec());
+            Document::new(key(1), clock.get_time().await, b"Hello, world 1".to_vec());
         let mut doc_2 =
-            Document::new(2, clock.get_time().await, b"Hello, world 2".to_vec());
-        let doc_3 = Document::new(3, clock.get_time().await, b"Hello, world 3".to_vec());
+            Document::new(key(2), clock.get_time().await, b"Hello, world 2".to_vec());
+        let doc_3 = Document::new(key(3), clock.get_time().await, b"Hello, world 3".to_vec());
         add_docs(
             KEYSPACE,
             smallvec![doc_1.clone(), doc_2.clone(), doc_3.clone()],
@@ -467,7 +472,7 @@ mod tests {
         let saved_docs = storage
             .multi_get(
                 KEYSPACE,
-                vec![doc_1.id(), doc_2.id(), doc_3.id()].into_iter(),
+                [doc_1.id().to_vec(), doc_2.id().to_vec(), doc_3.id().to_vec()].into_iter(),
             )
             .await
             .expect("Get new doc.")
@@ -482,7 +487,7 @@ mod tests {
         doc_2.metadata.last_updated = clock.get_time().await;
         let remove_req = Request::using_owned(MultiRemovePayload {
             keyspace: KEYSPACE.to_string(),
-            documents: smallvec![doc_1.metadata, doc_2.metadata],
+            documents: smallvec![doc_1.metadata.clone(), doc_2.metadata.clone()],
             timestamp: clock.get_time().await,
         })
         .await;
@@ -495,7 +500,7 @@ mod tests {
         let saved_docs = storage
             .multi_get(
                 KEYSPACE,
-                vec![doc_1.id(), doc_2.id(), doc_3.id()].into_iter(),
+                [doc_1.id().to_vec(), doc_2.id().to_vec(), doc_3.id().to_vec()].into_iter(),
             )
             .await
             .expect("Get new doc.")
@@ -514,9 +519,9 @@ mod tests {
         assert_eq!(
             metadata,
             HashSet::from_iter([
-                (doc_1.id(), doc_1.last_updated(), true),
-                (doc_2.id(), doc_2.last_updated(), true),
-                (doc_3.id(), doc_3.last_updated(), false),
+                (doc_1.id().to_vec(), doc_1.last_updated(), true),
+                (doc_2.id().to_vec(), doc_2.last_updated(), true),
+                (doc_3.id().to_vec(), doc_3.last_updated(), false),
             ])
         );
     }
